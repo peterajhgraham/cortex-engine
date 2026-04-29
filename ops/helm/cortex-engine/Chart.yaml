@@ -1,0 +1,8 @@
+apiVersion: v2
+name: cortex-engine
+description: Real-time inference for transformer neural decoders
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: Peter

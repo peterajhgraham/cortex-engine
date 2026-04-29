@@ -1,0 +1,41 @@
+{
+  "title": "Cortex-Engine — Resources",
+  "uid": "cortex-resources",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "GPU memory used",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [{ "expr": "cortex_gpu_memory_used_bytes" }],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 2,
+      "title": "GPU utilization",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [{ "expr": "cortex_gpu_utilization_percent" }],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 3,
+      "title": "KV cache pages used",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [{ "expr": "cortex_kv_cache_pages_used" }]
+    },
+    {
+      "id": 4,
+      "title": "KV cache hit rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [{ "expr": "cortex_kv_cache_hit_rate" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+host: 0.0.0.0
+port: 8080
+workers: 1
+
+# Continuous batching
+max_batch_size: 32
+max_queue_size: 256
+batch_timeout_ms: 5
+deadline_ms: 30  # SLO target
+
+# Model loading
+checkpoint_path: ./checkpoints/cortex_s_best
+quantized: false
+quantization_bits: 8
+
+# KV cache
+kv_cache_pages: 128
+kv_cache_page_size: 64
+
+# Observability
+metrics_port: 9090
+otel_endpoint: null

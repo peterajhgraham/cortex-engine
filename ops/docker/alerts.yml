@@ -1,0 +1,43 @@
+groups:
+  - name: cortex-engine-slo
+    interval: 30s
+    rules:
+      # SLO: 99% of requests under 50ms
+      - alert: HighP99Latency
+        expr: histogram_quantile(0.99, rate(cortex_request_latency_seconds_bucket[5m])) > 0.050
+        for: 2m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "p99 latency exceeds SLO"
+          description: "p99 request latency is {{ $value | humanizeDuration }}, above the 50ms SLO"
+
+      # SLO: error rate under 0.1%
+      - alert: HighErrorRate
+        expr: rate(cortex_errors_total[5m]) / rate(cortex_requests_total[5m]) > 0.001
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "Error rate exceeds SLO"
+          description: "Error rate is {{ $value | humanizePercentage }}, above 0.1% SLO"
+
+      # Capacity: queue saturation
+      - alert: QueueNearSaturation
+        expr: cortex_queue_depth > 200
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler queue depth approaching limit"
+
+      # GPU memory pressure
+      - alert: HighGPUMemory
+        expr: cortex_gpu_memory_used_bytes > 0.9 * 80e9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU memory usage above 90%"

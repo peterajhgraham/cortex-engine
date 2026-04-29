@@ -1,0 +1,55 @@
+services:
+  cortex-engine:
+    build:
+      context: ../..
+      dockerfile: ops/docker/Dockerfile
+    image: cortex-engine:latest
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ../../checkpoints:/app/checkpoints:ro
+    environment:
+      - LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/ready', timeout=2.0).raise_for_status()"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ../dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+
+  loadgen:
+    image: grafana/k6:0.52.0
+    profiles: ["loadtest"]
+    volumes:
+      - ../k6:/scripts:ro
+    command: ["run", "/scripts/load_test.js"]
+    depends_on:
+      - cortex-engine

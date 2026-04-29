@@ -1,0 +1,53 @@
+{
+  "title": "Cortex-Engine — Traffic",
+  "uid": "cortex-traffic",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(cortex_requests_total[1m]))",
+          "legendFormat": "{{ endpoint }}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (error_type) (rate(cortex_errors_total[1m]))",
+          "legendFormat": "{{ error_type }}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Queue depth",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [{ "expr": "cortex_queue_depth" }]
+    },
+    {
+      "id": 4,
+      "title": "Concurrent in-flight requests",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(cortex_requests_total[1m]) * histogram_quantile(0.5, rate(cortex_request_latency_seconds_bucket[1m]))",
+          "legendFormat": "Little's Law estimate"
+        }
+      ]
+    }
+  ]
+}

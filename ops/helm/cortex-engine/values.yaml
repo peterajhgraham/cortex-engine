@@ -1,0 +1,61 @@
+replicaCount: 1
+
+image:
+  repository: cortex-engine
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+  metricsPort: 9090
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 16Gi
+  requests:
+    cpu: 2
+    memory: 8Gi
+
+# Autoscaling tied to queue depth, not CPU
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: cortex_queue_depth
+        target:
+          type: AverageValue
+          averageValue: "50"
+
+config:
+  maxBatchSize: 32
+  maxQueueSize: 256
+  batchTimeoutMs: 5
+  deadlineMs: 30
+
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 60
+    periodSeconds: 30
+  readiness:
+    path: /ready
+    initialDelaySeconds: 30
+    periodSeconds: 10
+
+serviceMonitor:
+  enabled: true
+  interval: 5s
+
+nodeSelector:
+  nvidia.com/gpu.present: "true"
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule

@@ -1,0 +1,18 @@
+hidden_dim: 128
+num_layers: 4
+num_heads: 2
+head_dim: 64
+mlp_ratio: 4.0
+dropout: 0.0
+
+num_latents: 64
+latent_dim: 128
+cross_attn_heads: 2
+
+max_neurons: 512
+max_time_bins: 1024
+spike_value_buckets: 8
+
+behavior_dim: 2
+use_masked_spike_head: true
+dtype: bfloat16

@@ -1,0 +1,97 @@
+{
+  "title": "Cortex-Engine — Latency Analysis",
+  "uid": "cortex-latency",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "End-to-end latency percentiles",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
+          "legendFormat": "p99"
+        },
+        {
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
+          "legendFormat": "p99.9"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.030 },
+              { "color": "red", "value": 0.050 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Latency breakdown: queue vs inference",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(cortex_queue_wait_seconds_bucket[1m])))",
+          "legendFormat": "queue p99"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(cortex_inference_latency_seconds_bucket[1m])))",
+          "legendFormat": "inference p99"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 3,
+      "title": "SLO budget burn",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "(rate(cortex_request_latency_seconds_count[1h]) - rate(cortex_request_latency_seconds_bucket{le=\"0.05\"}[1h])) / rate(cortex_request_latency_seconds_count[1h]) / 0.01"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Batch size distribution",
+      "type": "heatmap",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 8 },
+      "targets": [
+        { "expr": "rate(cortex_batch_size_bucket[1m])", "format": "heatmap" }
+      ]
+    }
+  ]
+}

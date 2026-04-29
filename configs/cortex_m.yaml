@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - model: cortex_m
+  - training: default
+  - data: mc_maze
+  - runtime: default
+  - serving: default
+  - _self_
+
+experiment_name: cortex_m_baseline
+seed: 42

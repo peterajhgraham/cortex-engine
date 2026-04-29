@@ -1,0 +1,19 @@
+device: cuda
+seed: 42
+deterministic: false  # Triton autotune is non-deterministic
+
+mixed_precision: true
+compile: false  # torch.compile, enable per-experiment
+
+checkpoint_dir: ./checkpoints
+log_dir: ./logs
+results_dir: ./results
+
+# W&B
+wandb_enabled: true
+wandb_project: cortex-engine
+wandb_entity: null  # set per-user
+
+# Logging
+log_level: INFO
+log_json: false
