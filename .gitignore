@@ -55,13 +55,14 @@ dmypy.json
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Project artifacts
-checkpoints/
-data/
-wandb/
-outputs/
-logs/
-results/
+# Project artifacts (anchored to repo root so they don't shadow source dirs
+# like cortex/data/)
+/checkpoints/
+/data/
+/wandb/
+/outputs/
+/logs/
+/results/
 benchmarks/**/*.json
 benchmarks/**/*.csv
 !benchmarks/**/.gitkeep
