@@ -322,25 +322,26 @@ def run_training_loop(
                 if results.r2_velocity > state.best_val_metric:
                     state.best_val_metric = results.r2_velocity
                     if is_main_process():
-                        save_checkpoint(
-                            checkpoint_dir / "best",
-                            model,
-                            optimizer,
-                            asdict(state),
-                        )
+                        best_path = checkpoint_dir / "best"
+                        save_checkpoint(best_path, model, optimizer, asdict(state))
+                        _log_checkpoint_artifact(wandb_run, best_path, name="best")
 
             if (
                 is_main_process()
                 and state.step > 0
                 and state.step % cfg.training.checkpoint_every == 0
             ):
-                save_checkpoint(checkpoint_dir / f"step-{state.step}", model, optimizer, asdict(state))
+                step_path = checkpoint_dir / f"step-{state.step}"
+                save_checkpoint(step_path, model, optimizer, asdict(state))
+                _log_checkpoint_artifact(wandb_run, step_path, name=f"step-{state.step}")
 
         state.epoch += 1
 
     # Final checkpoint
     if is_main_process():
-        save_checkpoint(checkpoint_dir / "final", model, optimizer, asdict(state))
+        final_path = checkpoint_dir / "final"
+        save_checkpoint(final_path, model, optimizer, asdict(state))
+        _log_checkpoint_artifact(wandb_run, final_path, name="final")
 
 
 def _move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
@@ -359,6 +360,23 @@ def _init_wandb(cfg: DictConfig) -> Any:
         name=cfg.experiment_name,
         config=OmegaConf.to_container(cfg, resolve=True),
     )
+
+
+def _log_checkpoint_artifact(wandb_run: Any, ckpt_path: Path, name: str) -> None:
+    """Upload a checkpoint directory as a W&B artifact. No-op if W&B is off.
+
+    The artifact is reusable across runs via wandb's content-addressed storage,
+    so re-uploading the same content is cheap.
+    """
+    if wandb_run is None:
+        return
+    try:
+        import wandb
+    except ImportError:
+        return
+    artifact = wandb.Artifact(name=f"{wandb_run.name}-{name}", type="model")
+    artifact.add_dir(str(ckpt_path))
+    wandb_run.log_artifact(artifact)
 
 
 if __name__ == "__main__":
