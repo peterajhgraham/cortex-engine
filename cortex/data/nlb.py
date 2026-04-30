@@ -198,7 +198,7 @@ class NLBDataset(Dataset):
                 self.data_root / dandiset_id,
                 bin_size_ms=bin_size_ms,
                 max_neurons=max_neurons,
-            )
+            )  # uses default nwb_glob="*behavior*.nwb" to skip test-only files
         self.sessions = sessions
 
         all_windows: list[tuple[int, int, int]] = []
@@ -378,13 +378,21 @@ def _load_sessions_from_directory(
     nwb_dir: Path,
     bin_size_ms: int,
     max_neurons: int,
+    nwb_glob: str = "*behavior*.nwb",
 ) -> list[SessionData]:
-    """Load every NWB file under nwb_dir into a SessionData list.
+    """Load NWB files matching nwb_glob under nwb_dir into a SessionData list.
+
+    Defaults to files that contain "behavior" in their name, which selects the
+    MC_Maze training NWB (with behavior labels) and skips the test NWB (which
+    has no kinematics and would inject constant zero-label windows).
 
     Each session is binned at bin_size_ms and assigned a contiguous neuron-id
     range starting from the running offset.
     """
-    nwb_files = sorted(nwb_dir.rglob("*.nwb"))
+    nwb_files = sorted(nwb_dir.rglob(nwb_glob))
+    if not nwb_files:
+        # Fallback: try all NWB files (supports datasets without "behavior" tag)
+        nwb_files = sorted(nwb_dir.rglob("*.nwb"))
     if not nwb_files:
         raise FileNotFoundError(f"No .nwb files under {nwb_dir}")
 

@@ -193,8 +193,10 @@ class DenseWindowDataset(Dataset):
         features[:, offset : offset + window.shape[1]] = torch.from_numpy(
             window.astype(np.float32)
         )
-        behavior = torch.from_numpy(session.behavior[end - 1].astype(np.float32, copy=False))
-        return {"features": features, "behavior": behavior}
+        # Z-score to match NLBDataset normalization so baseline R² is comparable.
+        raw = session.behavior[end - 1].astype(np.float32, copy=False)
+        behavior = (raw - self.nlb._behavior_mean) / self.nlb._behavior_std
+        return {"features": features, "behavior": torch.from_numpy(behavior)}
 
 
 def collate_dense(batch: list[dict[str, torch.Tensor]]) -> DenseBatch:
