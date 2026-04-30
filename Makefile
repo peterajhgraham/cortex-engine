@@ -63,7 +63,7 @@ train-xs:
 	python -m cortex.training.train --config-name=cortex_xs
 
 train-s:
-	python -m cortex.training.train --config-name=cortex_s
+	python scripts/train_benchmark.py --max-steps 2000 --device auto
 
 train-m:
 	python -m cortex.training.train --config-name=cortex_m

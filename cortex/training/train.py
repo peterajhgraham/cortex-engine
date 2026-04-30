@@ -342,7 +342,7 @@ def run_training_loop(
 
 
 def _move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
-    return {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+    return {k: v.to(device) for k, v in batch.items()}
 
 
 def _init_wandb(cfg: DictConfig) -> Any:

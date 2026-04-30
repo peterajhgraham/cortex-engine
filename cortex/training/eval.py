@@ -87,20 +87,27 @@ def evaluate(
     masked_total = 0
 
     for batch in loader:
-        batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+        # Keep behavior labels on CPU — avoids an MPS non_blocking race where
+        # the tensor hasn't committed before we immediately call .cpu().
+        behavior_cpu = batch["behavior"].float()
+        spike_keys = ("neuron_ids", "time_bins", "values", "batch_indices")
+        batch_dev = {k: batch[k].to(device) for k in spike_keys}
+        if "masked_spike_targets" in batch:
+            batch_dev["masked_spike_targets"] = batch["masked_spike_targets"].to(device)
+
         out = model(
-            neuron_ids=batch["neuron_ids"],
-            time_bins=batch["time_bins"],
-            values=batch["values"],
-            batch_indices=batch["batch_indices"],
+            neuron_ids=batch_dev["neuron_ids"],
+            time_bins=batch_dev["time_bins"],
+            values=batch_dev["values"],
+            batch_indices=batch_dev["batch_indices"],
             return_aux=True,
         )
         all_pred.append(out["behavior"].float().cpu())
-        all_true.append(batch["behavior"].float().cpu())
+        all_true.append(behavior_cpu)
 
-        if "masked_spike_logits" in out and "masked_spike_targets" in batch:
+        if "masked_spike_logits" in out and "masked_spike_targets" in batch_dev:
             preds = out["masked_spike_logits"].argmax(dim=-1)
-            masked_correct += int((preds == batch["masked_spike_targets"]).sum().item())
+            masked_correct += int((preds == batch_dev["masked_spike_targets"]).sum().item())
             masked_total += int(preds.numel())
 
     y_pred = torch.cat(all_pred)

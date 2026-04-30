@@ -1,16 +1,17 @@
 name: mc_maze
 dandiset_id: "000128"
-data_root: ./data/nlb
+data_root: ./data
 bin_size_ms: 5
 window_ms: 600
 stride_ms: 50
-max_neurons: 256
+max_neurons: 512
 
 splits:
   train: 0.8
   val: 0.1
   test: 0.1
 
-num_workers: 4
-pin_memory: true
-prefetch_factor: 2
+batch_size: 32
+num_workers: 0
+pin_memory: false
+prefetch_factor: null

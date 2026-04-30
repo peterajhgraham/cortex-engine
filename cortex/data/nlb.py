@@ -209,6 +209,20 @@ class NLBDataset(Dataset):
 
         self._windows = _split_windows(all_windows, split, split_seed, split_fractions)
 
+        # Compute z-score normalization from sessions that have real behavior.
+        # Test-only NWB files have all-zero velocity; exclude them so they don't
+        # bias the statistics. Fall back to identity (mean=0, std=1) when no
+        # session has real behavior (e.g. synthetic unit tests).
+        heldin_behavior = [s.behavior for s in sessions if s.behavior.any()]
+        if heldin_behavior:
+            all_behavior = np.concatenate(heldin_behavior, axis=0)
+            self._behavior_mean = all_behavior.mean(axis=0).astype(np.float32)
+            self._behavior_std = all_behavior.std(axis=0).clip(min=1e-6).astype(np.float32)
+        else:
+            behavior_dim = sessions[0].behavior.shape[1] if sessions else 2
+            self._behavior_mean = np.zeros(behavior_dim, dtype=np.float32)
+            self._behavior_std = np.ones(behavior_dim, dtype=np.float32)
+
         log.info(
             "nlb_dataset_built",
             split=split,
@@ -216,6 +230,7 @@ class NLBDataset(Dataset):
             n_windows=len(self._windows),
             window_bins=self.window_bins,
             stride_bins=self.stride_bins,
+            behavior_std=self._behavior_std.tolist(),
         )
 
     def __len__(self) -> int:
@@ -239,8 +254,9 @@ class NLBDataset(Dataset):
 
         # Behavior target: hand velocity at the final bin of the window. Using
         # the end-of-window matches a causal decoder that emits "current
-        # velocity" given the recent past.
+        # velocity" given the recent past. Z-scored so loss magnitude is ~O(1).
         behavior = session.behavior[end - 1].astype(np.float32, copy=False)
+        behavior = (behavior - self._behavior_mean) / self._behavior_std
 
         return {
             "neuron_ids": torch.from_numpy(neuron_ids),
