@@ -19,13 +19,15 @@ A complete training and inference stack for transformer neural decoders, enginee
 
 | Metric                | Baseline (PyTorch eager) | Cortex-Engine | Improvement |
 |-----------------------|--------------------------|---------------|-------------|
-| p50 latency           | TBD                      | TBD           | TBD         |
-| p99 latency           | TBD                      | TBD           | TBD         |
-| Throughput (req/s)    | TBD                      | TBD           | TBD         |
-| Peak memory (GB)      | TBD                      | TBD           | TBD         |
-| Decoding R²           | TBD                      | TBD           | TBD         |
+| p50 latency           | TBD (Phase 3)            | TBD           | target <15 ms p99 |
+| p99 latency           | TBD (Phase 3)            | TBD           | target <30 ms     |
+| Throughput (req/s)    | TBD (Phase 3)            | TBD           | target 5×         |
+| Peak memory (GB)      | TBD (Phase 2)            | TBD           | target 4× via INT8|
+| Decoding R² (velocity)| Wiener −0.003 · GRU −0.006 · Transformer −0.013 | Cortex-S −0.0002 | Phase 1 infra run; see note |
 
-> Numbers populated as phases complete. See `benchmarks/` for raw data and reproduction scripts.
+> **Phase 1 note:** All R² values are from sliding-window evaluation over the full MC_Maze continuous recording (115 min, 85% rest). Published NLB numbers (Wiener R² ≈ 0.40) use trial-aligned evaluation. Trial-aligned evaluation is scoped for Phase 2. See [`benchmarks/training/results.md`](benchmarks/training/results.md) for full explanation.
+>
+> Latency/throughput numbers are Phase 2–3 deliverables. See `benchmarks/` for raw data and reproduction scripts.
 
 ## Architecture
 
