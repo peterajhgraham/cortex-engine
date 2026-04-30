@@ -414,56 +414,77 @@ def _load_sessions_from_directory(
 
 
 def _extract_session_arrays(nwb: Any, bin_size_ms: int) -> tuple[np.ndarray, np.ndarray]:
-    """Extract (binned_spikes, hand_velocity) from an NWB file.
+    """Extract (binned_spikes, hand_velocity) from an NLB MC_Maze NWB file.
 
-    Conventions used here match the NLB MC_Maze format:
-        - Spikes are in nwb.units (a DynamicTable with a 'spike_times' column).
-        - Hand kinematics are in nwb.processing['behavior']['Position'] for
-          position; we numerically differentiate to get velocity.
+    MC_Maze NWB convention:
+        - Spikes are in nwb.units (DynamicTable, 'spike_times' column). We use
+          only heldin units (heldout==False) so the model sees the same feature
+          space for train and test splits.
+        - Hand velocity is pre-computed in nwb.processing['behavior']['hand_vel']
+          as a 1 kHz TimeSeries; we resample to bin_size_ms bins.
     """
     units = nwb.units
+    units_df = units.to_dataframe()
+    # Use heldin units only (consistent across train/test splits)
+    heldin_mask = ~units_df["heldout"].values
+    heldin_indices = np.where(heldin_mask)[0]
+
     spike_times_per_unit: list[np.ndarray] = [
-        np.asarray(units["spike_times"][i], dtype=np.float64) for i in range(len(units))
+        np.asarray(units["spike_times"][int(i)], dtype=np.float64) for i in heldin_indices
     ]
     n_units = len(spike_times_per_unit)
 
-    behavior_proc = nwb.processing["behavior"]
-    position_container = behavior_proc["Position"]
-    pos_ts = next(iter(position_container.spatial_series.values()))
-    position = np.asarray(pos_ts.data, dtype=np.float32)
-    pos_rate = float(pos_ts.rate)
-    pos_t0 = float(pos_ts.starting_time)
+    behavior_proc = nwb.processing.get("behavior", None)
+    if behavior_proc is not None and "hand_vel" in behavior_proc.data_interfaces:
+        vel_ts = behavior_proc["hand_vel"]
+        raw_vel = np.asarray(vel_ts.data, dtype=np.float32)
+        timestamps = np.asarray(vel_ts.timestamps, dtype=np.float64)
+        raw_rate_hz = 1.0 / float(np.median(np.diff(timestamps[:1000])))
+        t0_s = float(timestamps[0])
+        t_end = float(timestamps[-1])
+    else:
+        # Test split: no behavior. Synthesize zeros so the dataset can be
+        # built; behavior targets from the test split are never used.
+        raw_vel = None
+        t0_s = 0.0
+        t_end = 0.0
+        raw_rate_hz = 1000.0
+        for spikes in spike_times_per_unit:
+            if len(spikes):
+                t0_s = min(t0_s, float(spikes.min()))
+                t_end = max(t_end, float(spikes.max()))
 
     bin_size_s = bin_size_ms / 1000.0
-    t_end = pos_t0 + position.shape[0] / pos_rate
-    n_bins = int((t_end - pos_t0) / bin_size_s)
+    n_bins = max(int((t_end - t0_s) / bin_size_s), 1)
 
     bin_counts = np.zeros((n_bins, n_units), dtype=np.int32)
     for unit_idx, spikes in enumerate(spike_times_per_unit):
-        bin_counts[:, unit_idx] = bin_spikes(spikes, n_bins, bin_size_s, t0_s=pos_t0)
+        bin_counts[:, unit_idx] = bin_spikes(spikes, n_bins, bin_size_s, t0_s=t0_s)
 
-    velocity = _resample_velocity_to_bins(position, pos_rate, n_bins, bin_size_s)
+    if raw_vel is not None:
+        velocity = _resample_to_bins(raw_vel, raw_rate_hz, n_bins, bin_size_s)
+    else:
+        velocity = np.zeros((n_bins, 2), dtype=np.float32)
     return bin_counts, velocity
 
 
-def _resample_velocity_to_bins(
-    position: np.ndarray,
-    pos_rate: float,
+def _resample_to_bins(
+    signal: np.ndarray,
+    src_rate_hz: float,
     n_bins: int,
     bin_size_s: float,
 ) -> np.ndarray:
-    """Numerically differentiate position and resample to one sample per bin."""
-    velocity = np.gradient(position, 1.0 / pos_rate, axis=0).astype(np.float32, copy=False)
-    samples_per_bin = max(int(round(bin_size_s * pos_rate)), 1)
+    """Downsample a high-rate signal to one sample per time bin by averaging."""
+    samples_per_bin = max(int(round(bin_size_s * src_rate_hz)), 1)
 
-    n_complete = (velocity.shape[0] // samples_per_bin) * samples_per_bin
-    trimmed = velocity[:n_complete]
-    reshaped = trimmed.reshape(-1, samples_per_bin, velocity.shape[1])
-    binned = reshaped.mean(axis=1)
+    n_complete = (signal.shape[0] // samples_per_bin) * samples_per_bin
+    trimmed = signal[:n_complete]
+    reshaped = trimmed.reshape(-1, samples_per_bin, signal.shape[1])
+    binned = reshaped.mean(axis=1).astype(np.float32)
 
     if binned.shape[0] >= n_bins:
         return binned[:n_bins]
-    pad = np.zeros((n_bins - binned.shape[0], binned.shape[1]), dtype=np.float32)
+    pad = np.zeros((n_bins - binned.shape[0], signal.shape[1]), dtype=np.float32)
     return np.concatenate([binned, pad], axis=0)
 
 
