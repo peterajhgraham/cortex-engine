@@ -1,9 +1,9 @@
 """Model configuration. Strongly typed via Pydantic.
 
 Three reference sizes are exposed at the bottom:
-- Cortex-XS: ~5M params  (4 layers,  128 dim, 2 heads)
-- Cortex-S:  ~25M params (6 layers,  256 dim, 4 heads)
-- Cortex-M:  ~80M params (8 layers,  384 dim, 6 heads)
+- Cortex-XS: ~5M params  (5 layers,  256 dim, 4 heads, 128 latents)
+- Cortex-S:  ~25M params (7 layers,  512 dim, 8 heads, 256 latents)
+- Cortex-M:  ~80M params (11 layers, 768 dim, 12 heads, 384 latents)
 """
 
 from __future__ import annotations
@@ -57,21 +57,8 @@ class CortexConfig(BaseModel):
 # ── Reference configs ──────────────────────────────────────────────────────────
 
 CORTEX_XS = CortexConfig(
-    hidden_dim=128,
-    num_layers=4,
-    num_heads=2,
-    head_dim=64,
-    num_latents=64,
-    latent_dim=128,
-    cross_attn_heads=2,
-    max_neurons=512,
-    max_time_bins=1024,
-    behavior_dim=2,
-)
-
-CORTEX_S = CortexConfig(
     hidden_dim=256,
-    num_layers=6,
+    num_layers=5,
     num_heads=4,
     head_dim=64,
     num_latents=128,
@@ -82,14 +69,27 @@ CORTEX_S = CortexConfig(
     behavior_dim=2,
 )
 
-CORTEX_M = CortexConfig(
-    hidden_dim=384,
-    num_layers=8,
-    num_heads=6,
+CORTEX_S = CortexConfig(
+    hidden_dim=512,
+    num_layers=7,
+    num_heads=8,
     head_dim=64,
     num_latents=256,
-    latent_dim=384,
-    cross_attn_heads=6,
+    latent_dim=512,
+    cross_attn_heads=8,
+    max_neurons=512,
+    max_time_bins=1024,
+    behavior_dim=2,
+)
+
+CORTEX_M = CortexConfig(
+    hidden_dim=768,
+    num_layers=11,
+    num_heads=12,
+    head_dim=64,
+    num_latents=384,
+    latent_dim=768,
+    cross_attn_heads=12,
     max_neurons=512,
     max_time_bins=1024,
     behavior_dim=2,

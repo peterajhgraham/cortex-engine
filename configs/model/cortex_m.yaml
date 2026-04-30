@@ -1,13 +1,13 @@
-hidden_dim: 384
-num_layers: 8
-num_heads: 6
+hidden_dim: 768
+num_layers: 11
+num_heads: 12
 head_dim: 64
 mlp_ratio: 4.0
 dropout: 0.0
 
-num_latents: 256
-latent_dim: 384
-cross_attn_heads: 6
+num_latents: 384
+latent_dim: 768
+cross_attn_heads: 12
 
 max_neurons: 512
 max_time_bins: 1024
