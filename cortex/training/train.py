@@ -31,6 +31,7 @@ from cortex.data.nlb import build_dataloaders
 from cortex.models import CortexConfig, CortexModel
 from cortex.training.checkpoint import save_checkpoint
 from cortex.training.eval import evaluate
+from cortex.utils.device import select_device
 from cortex.utils.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
@@ -189,11 +190,7 @@ def main(cfg: DictConfig) -> None:
     configure_logging(level=cfg.runtime.log_level, json=cfg.runtime.log_json)
     torch.manual_seed(cfg.seed + rank)
 
-    device_str = cfg.runtime.device
-    if device_str == "cuda" and not torch.cuda.is_available():
-        log.warning("cuda_requested_but_unavailable_falling_back_to_cpu")
-        device_str = "cpu"
-    device = torch.device(f"cuda:{local_rank}" if device_str == "cuda" else "cpu")
+    device = select_device(preference=cfg.runtime.device, local_rank=local_rank)
 
     if is_main_process():
         log.info(
