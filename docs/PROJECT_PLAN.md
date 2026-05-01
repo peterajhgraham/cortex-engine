@@ -9,17 +9,17 @@ deliverable, success criterion, and "definition of done" check.
 
 | ID | Task | Files | Status |
 |----|------|-------|--------|
-| 1.1 | Spike tokenizer | `cortex/models/tokenizer.py` | scaffold |
-| 1.2 | Perceiver encoder | `cortex/models/perceiver.py` | scaffold |
-| 1.3 | Decoder heads | `cortex/models/cortex.py` | scaffold |
-| 1.4 | NLB data loader | `cortex/data/nlb.py` | TODO |
-| 1.5 | FSDP training loop | `cortex/training/train.py` | TODO |
-| 1.6 | W&B integration | `cortex/training/train.py` | TODO |
-| 1.7 | Sharded checkpoints | `cortex/training/checkpoint.py` | TODO |
-| 1.8 | Wiener filter baseline | `cortex/training/baselines.py` | TODO |
-| 1.9 | GRU baseline | `cortex/training/baselines.py` | TODO |
-| 1.10 | Vanilla transformer baseline | `cortex/training/baselines.py` | TODO |
-| 1.11 | Eval pipeline + R² metric | `cortex/training/eval.py` | TODO |
+| 1.1 | Spike tokenizer | `cortex/models/tokenizer.py` | done |
+| 1.2 | Perceiver encoder | `cortex/models/perceiver.py` | done |
+| 1.3 | Decoder heads | `cortex/models/cortex.py` | done |
+| 1.4 | NLB data loader | `cortex/data/nlb.py` | done |
+| 1.5 | FSDP training loop | `cortex/training/train.py` | done |
+| 1.6 | W&B integration | `cortex/training/train.py` | done |
+| 1.7 | Sharded checkpoints | `cortex/training/checkpoint.py` | done |
+| 1.8 | Wiener filter baseline | `cortex/training/baselines.py` | done |
+| 1.9 | GRU baseline | `cortex/training/baselines.py` | done |
+| 1.10 | Vanilla transformer baseline | `cortex/training/baselines.py` | done |
+| 1.11 | Eval pipeline + R² metric | `cortex/training/eval.py` | done |
 
 ### Definition of Done
 
@@ -36,14 +36,14 @@ deliverable, success criterion, and "definition of done" check.
 
 | ID | Task | Files | Status |
 |----|------|-------|--------|
-| 2.1 | Profile baseline inference | `benchmarks/profiling/baseline.md` | TODO |
+| 2.1 | Profile baseline inference | `benchmarks/profiling/baseline.md` | done |
 | 2.2 | Fused tokenizer kernel | `cortex/kernels/tokenizer.py` | done |
-| 2.3 | Sparse cross-attention kernel | `cortex/kernels/sparse_xattn.py` | TODO |
-| 2.4 | Fused RMSNorm kernel | `cortex/kernels/fused_rmsnorm.py` | TODO |
-| 2.5 | Kernel benchmarks | `benchmarks/kernels/*.md` | partial |
-| 2.6 | INT8 calibration | `cortex/quantization/calibrate.py` | scaffold |
-| 2.7 | QuantizedLinear + conversion | `cortex/quantization/quantize.py` | TODO |
-| 2.8 | Quantization benchmark | `benchmarks/quantization/results.md` | TODO |
+| 2.3 | Sparse cross-attention kernel | `cortex/kernels/sparse_xattn.py` | done |
+| 2.4 | Fused RMSNorm kernel | `cortex/kernels/fused_rmsnorm.py` | done |
+| 2.5 | Kernel benchmarks | `benchmarks/kernels/*.md` | partial (CUDA perf numbers pending) |
+| 2.6 | INT8 calibration | `cortex/quantization/calibrate.py` | done |
+| 2.7 | QuantizedLinear + conversion | `cortex/quantization/quantize.py` | done |
+| 2.8 | Quantization benchmark | `benchmarks/quantization/results.md` | done |
 
 ### Definition of Done
 
@@ -60,13 +60,13 @@ deliverable, success criterion, and "definition of done" check.
 | ID | Task | Files | Status |
 |----|------|-------|--------|
 | 3.1 | Pydantic API schemas | `cortex/serve/schemas.py` | done |
-| 3.2 | Continuous batching scheduler | `cortex/serve/scheduler.py` | scaffold |
-| 3.3 | Inference worker | `cortex/serve/worker.py` | scaffold |
-| 3.4 | Streaming KV cache | `cortex/cache/streaming.py` | scaffold |
-| 3.5 | FastAPI app | `cortex/serve/app.py` | scaffold |
-| 3.6 | WebSocket streaming endpoint | `cortex/serve/app.py` | scaffold |
+| 3.2 | Continuous batching scheduler | `cortex/serve/scheduler.py` | done |
+| 3.3 | Inference worker | `cortex/serve/worker.py` | done |
+| 3.4 | Streaming KV cache | `cortex/cache/streaming.py` | done |
+| 3.5 | FastAPI app | `cortex/serve/app.py` | done |
+| 3.6 | WebSocket streaming endpoint | `cortex/serve/app.py` | done |
 | 3.7 | Load test scripts | `ops/k6/*.js` | done |
-| 3.8 | Latency benchmarks | `benchmarks/serving/*.md` | TODO |
+| 3.8 | Latency benchmarks | `benchmarks/serving/*.md` | done |
 
 ### Definition of Done
 
@@ -83,14 +83,14 @@ deliverable, success criterion, and "definition of done" check.
 | ID | Task | Files | Status |
 |----|------|-------|--------|
 | 4.1 | Prometheus metrics | `cortex/serve/metrics.py` | done |
-| 4.2 | Grafana dashboards | `ops/dashboards/*.json` | TODO |
-| 4.3 | OpenTelemetry tracing | `cortex/serve/tracing.py` | TODO |
+| 4.2 | Grafana dashboards | `ops/dashboards/*.json` | done |
+| 4.3 | OpenTelemetry tracing | `cortex/serve/tracing.py` | done |
 | 4.4 | Structured logging | `cortex/utils/logging.py` | done |
 | 4.5 | Alertmanager rules | `ops/docker/alerts.yml` | done |
 | 4.6 | Multi-stage Dockerfile | `ops/docker/Dockerfile` | done |
 | 4.7 | docker-compose stack | `ops/docker/docker-compose.yml` | done |
-| 4.8 | Helm chart skeleton | `ops/helm/cortex-engine/` | TODO |
-| 4.9 | Runbook | `docs/runbook.md` | scaffold |
+| 4.8 | Helm chart skeleton | `ops/helm/cortex-engine/` | done |
+| 4.9 | Runbook | `docs/runbook.md` | done |
 | 4.10 | SLO doc | `docs/slo.md` | done |
 
 ### Definition of Done
@@ -106,10 +106,10 @@ deliverable, success criterion, and "definition of done" check.
 
 | ID | Task | Files | Status |
 |----|------|-------|--------|
-| 5.1 | README polish | `README.md` | scaffold |
-| 5.2 | Long-form writeup | `docs/writeup.md` | TODO |
-| 5.3 | Architecture diagrams | `docs/diagrams/` | TODO |
-| 5.4 | Demo gif/video | `docs/demo.gif` | TODO |
+| 5.1 | README polish | `README.md` | done |
+| 5.2 | Long-form writeup | `docs/writeup.md` | done |
+| 5.3 | Architecture diagrams | `docs/diagrams/` | partial (ASCII in README; Mermaid deferred) |
+| 5.4 | Demo gif/video | `docs/demo.gif` | deferred (requires CUDA host) |
 
 ### Definition of Done
 

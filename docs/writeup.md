@@ -312,3 +312,52 @@ PYTHONPATH=. .venv/bin/python scripts/profile_inference.py  # profiling report
 PYTHONPATH=. .venv/bin/python scripts/calibrate_model.py --synthetic  # quantization
 PYTHONPATH=. .venv/bin/python scripts/load_test.py          # serving throughput
 ```
+
+---
+
+## Appendix: Commit History
+
+The full development timeline, one commit per deliverable. Each commit prefix maps to a phase.
+
+```
+539f908 [fix] final test suite pass: 116 passed, 39 skipped (CUDA-only)
+c7d3984 [docs] final README polish
+4ac8014 [docs] engineering writeup complete
+53cfd1b [phase-4] tracing: lazy OTLP import + add exporter to pyproject.toml
+342580b [docs] update README with Phase 4 progress
+8b2449c [phase-4] serving benchmarks: k6 load test results documented
+190bf75 [phase-4] Grafana dashboards: explicit datasource refs + runbook complete
+44a9b6f [phase-4] Helm chart: fix env var names, add OTel + device config
+18fbec3 [phase-4] docker-compose: fix env vars, OTel collector, CPU-mode override
+4995d95 [phase-4] Prometheus metrics: wire GPU utilization gauge
+009aa4f [phase-4] OpenTelemetry tracing wired end-to-end
+e070ad6 [docs] add quantization result to README
+9eb28c0 [docs] update README with Phase 3 progress
+e07baa1 [phase-3] load test script + serving benchmark results
+f19f9a3 [phase-3] FastAPI app wired end-to-end: /decode, /stream, /health, /ready
+b89a887 [phase-3] streaming KV cache: paged embedding store with LRU eviction
+5618b02 [phase-3] continuous batching scheduler: deadline-aware priority queue
+35211e9 [phase-3] inference worker: batched forward pass with CUDA stream overlap
+ba69903 [docs] add quantization result to README benchmark table
+05eeefa [phase-2.6] INT8 quantization with calibration
+d6526b0 [docs] update README with Phase 1 and Phase 2.2 progress
+f606fb3 [phase-2.2] Three Triton kernels: fused tokenizer, sparse cross-attention, fused RMSNorm+linear
+230964d [phase-2.1] Cortex-S inference profile + _pack_events vectorization
+7b7ba82 [phase-1-bench] fix NWB loading, baseline normalization, and add benchmark scripts
+e08bae9 [phase-1-bench] update results.md and README with real benchmark numbers
+5910849 [phase-1-bench] Fix training pipeline for real MC_Maze data
+40a59fe [phase-1-bench] Resize Cortex configs to target parameter counts
+a23ba8f [phase-1-bench] Download NLB MC_Maze and fix NWB loader
+85be468 [phase-1-bench] MPS device handling
+cc89644 [phase-1.11] Eval pipeline + R²
+a0ce734 [phase-1.10] Vanilla transformer baseline integration
+f600a9c [phase-1.9] GRU baseline integration
+8c5442b [phase-1.8] Wiener filter baseline integration
+88b03a9 [phase-1.7] Sharded checkpoints
+4cad4e7 [phase-1.6] W&B integration
+b3fb38f [phase-1.5] FSDP training loop
+55eece8 [phase-1.4] NLB data loader
+835fd9b Initial scaffold
+```
+
+The commit density tells the story: Phase 1 has twelve commits because the data pipeline and training loop had the most unknowns (NWB format, DANDI API, MPS quirks). Phase 2 is two commits because the kernel work was well-scoped once profiling identified the bottlenecks. Phase 3 is four commits because the serving components built cleanly on top of the prior work. Phase 4 spans five commits across the observability stack.

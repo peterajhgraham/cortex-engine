@@ -1,8 +1,10 @@
 # Cortex-Engine
 
-**Real-time inference infrastructure for transformer-based neural decoders.**
+**Full-stack ML systems infrastructure for transformer-based neural decoders — from custom GPU kernels to production observability.**
 
-Cortex-Engine is a production-oriented ML systems project that builds the full stack for deploying a Perceiver-style transformer decoder on neural population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). It covers a profiling-driven optimization workflow, three custom Triton GPU kernels, per-channel INT8 quantization with calibration (72% weight memory reduction), and a continuous-batching inference server with full observability — targeting sub-30ms p99 latency for streaming brain-computer interface (BCI) decoding on a single A100. Development ran entirely on Apple M4 Pro MPS; CUDA benchmark numbers are pending but the architecture for the target is in place. The infrastructure patterns are directly applicable to LLM serving: the same continuous batching, paged KV cache, FSDP training, and custom kernel workflow appear verbatim in production inference systems.
+Cortex-Engine is a ground-up build of the systems that sit between a trained model and a deployed product: three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with calibration pipeline (**72% weight memory reduction**), a continuous-batching inference server with a deadline-aware scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/), targeting sub-30ms p99 latency for streaming BCI decoding on an A100.
+
+Development ran on Apple M4 Pro MPS. CUDA kernel benchmark numbers are pending but every kernel has correctness tests, the serving engine delivers **10.5× throughput** over naive sequential inference, and the full observability stack runs via `docker compose up`. The infrastructure patterns — continuous batching, paged KV cache, FSDP training, calibrated quantization — are the same ones in production LLM inference systems, applied to a domain where the latency constraints are set by physiology rather than product convenience.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)](#)
 [![PyTorch](https://img.shields.io/badge/pytorch-2.2+-orange)](#)
