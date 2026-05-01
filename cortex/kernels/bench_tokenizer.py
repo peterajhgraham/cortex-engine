@@ -90,7 +90,9 @@ from cortex.kernels.tokenizer import fused_tokenizer, fused_tokenizer_reference 
 # ── Timing helpers ────────────────────────────────────────────────────────────
 
 
-def _bench(fn: Callable[..., Any], args: tuple[Any, ...], *, warmup: int = 25, iters: int = 100) -> float:
+def _bench(
+    fn: Callable[..., Any], args: tuple[Any, ...], *, warmup: int = 25, iters: int = 100
+) -> float:
     """Return median milliseconds per call (CUDA-synchronised)."""
     for _ in range(warmup):
         fn(*args)
