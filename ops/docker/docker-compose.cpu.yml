@@ -1,0 +1,33 @@
+# CPU-mode override for local development without an NVIDIA GPU.
+#
+# Usage:
+#   docker compose -f ops/docker/docker-compose.yml \
+#                  -f ops/docker/docker-compose.cpu.yml up
+#
+# This override:
+#   - Removes the NVIDIA GPU device reservation
+#   - Builds from Dockerfile.cpu (Python base, no CUDA)
+#   - Forces CORTEX_DEVICE=cpu
+#   - Removes the OTel collector (optional dependency)
+
+services:
+  cortex-engine:
+    build:
+      context: ../..
+      dockerfile: ops/docker/Dockerfile.cpu
+    image: cortex-engine:cpu
+    deploy:
+      resources: {}
+    environment:
+      - CORTEX_DEVICE=cpu
+      - CORTEX_LOG_LEVEL=INFO
+      - CORTEX_MAX_BATCH=8
+      - CORTEX_DEADLINE_MS=200
+      - CORTEX_BATCH_TIMEOUT_MS=10
+      # No OTel collector in CPU-only stack
+      - CORTEX_OTEL_ENDPOINT=
+    depends_on:
+      - prometheus
+
+  otel-collector:
+    profiles: ["otel"]

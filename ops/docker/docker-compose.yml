@@ -16,12 +16,21 @@ services:
     volumes:
       - ../../checkpoints:/app/checkpoints:ro
     environment:
-      - LOG_LEVEL=INFO
+      - CORTEX_LOG_LEVEL=INFO
+      - CORTEX_DEVICE=auto
+      - CORTEX_MAX_BATCH=32
+      - CORTEX_DEADLINE_MS=30
+      - CORTEX_BATCH_TIMEOUT_MS=5
+      - CORTEX_OTEL_ENDPOINT=http://otel-collector:4317
+    depends_on:
+      prometheus:
+        condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/ready', timeout=2.0).raise_for_status()"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
       interval: 10s
-      timeout: 3s
-      retries: 3
+      timeout: 5s
+      start_period: 60s
+      retries: 5
 
   prometheus:
     image: prom/prometheus:v2.54.0
@@ -33,6 +42,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-remote-write-receiver"
 
   grafana:
     image: grafana/grafana:11.1.0
@@ -41,15 +51,29 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
     volumes:
       - ../dashboards:/var/lib/grafana/dashboards:ro
       - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.0
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
 
   loadgen:
     image: grafana/k6:0.52.0
     profiles: ["loadtest"]
     volumes:
       - ../k6:/scripts:ro
+    environment:
+      - CORTEX_BASE=http://cortex-engine:8080
     command: ["run", "/scripts/load_test.js"]
     depends_on:
-      - cortex-engine
+      cortex-engine:
+        condition: service_healthy
