@@ -48,12 +48,12 @@ Three Triton kernels are fully implemented and tested. Benchmark numbers are pen
 
 ### Quantization (Phase 2.6 — MPS, Cortex-S, synthetic calibration data)
 
-| Configuration | Weight + buffer memory | Reduction | Max abs output diff |
+| Configuration | Weight + buffer memory | Reduction | Max weight error |
 |---|---|---|---|
 | float32 baseline | 99.2 MB | — | — |
-| INT8 per-channel weights | **27.8 MB** | **−72%** (−71.4 MB) | 0.003 |
+| INT8 per-channel weights | **27.8 MB** | **−72%** (−71.4 MB) | **0.003** |
 
-Savings: −71.4 MB (72.0%). 34/35 linear layers quantized (the one exception: `MaskedSpikeHead.proj` is gated by `return_aux=True` and never activates during a standard forward pass, so no calibration data was collected for it). Numbers measured with randomly initialized weights and synthetic spike events — MSE delta is not meaningful for model quality, but output fidelity (max abs diff 0.005) is. Full report: [`benchmarks/quantization/results.md`](benchmarks/quantization/results.md).
+Savings: −71.4 MB (72.0%). 34/35 linear layers quantized (the one exception: `MaskedSpikeHead.proj` is gated by `return_aux=True` and never activates during a standard forward pass, so no calibration data was collected for it). Numbers measured with randomly initialized weights and synthetic spike events — MSE delta is not meaningful for model quality, but max weight error (0.003) confirms quantization fidelity. Full report: [`benchmarks/quantization/results.md`](benchmarks/quantization/results.md).
 
 ### Serving latency (Phase 3 — Apple MPS, in-process, Cortex-S)
 
