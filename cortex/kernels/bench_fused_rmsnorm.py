@@ -14,21 +14,21 @@ Metrics reported
 Bandwidth calculation
 ---------------------
   Reference (two separate ops):
-      RMSNorm: reads M×K, writes M×K            = 2 × M×K
-      Linear:  reads M×K (x_norm) + K×N (W)     = M×K + K×N
-               writes M×N                        = M×N
-      Total:   3×M×K + K×N + M×N
+      RMSNorm: reads MxK, writes MxK            = 2 x MxK
+      Linear:  reads MxK (x_norm) + KxN (W)     = MxK + KxN
+               writes MxN                        = MxN
+      Total:   3xMxK + KxN + MxN
 
   Fused kernel (eliminates x_norm HBM round-trip):
-      Pass 1 + Pass 2: reads M×K twice + K×N    = 2×M×K + K×N
-      Writes: M×N                                = M×N
-      Total:  2×M×K + K×N + M×N
+      Pass 1 + Pass 2: reads MxK twice + KxN    = 2xMxK + KxN
+      Writes: MxN                                = MxN
+      Total:  2xMxK + KxN + MxN
 
   We report bandwidth using the FUSED theoretical minimum for BOTH so the
   metric shows how efficiently each implementation uses HBM:
-      bandwidth = (2×M×K + K×N + M×N) × sizeof(dtype) / time
+      bandwidth = (2xMxK + KxN + MxN) x sizeof(dtype) / time
 
-  The reference will show lower bandwidth because it does MORE work (3×M×K read)
+  The reference will show lower bandwidth because it does MORE work (3xMxK read)
   for the same byte denominator — the fused version genuinely saves HBM traffic.
 
 Input shapes
@@ -37,11 +37,11 @@ Input shapes
 
   M       K     N     Label
   -----   ---   ----  --------------------------------
-  256     512   1536  Cortex-S: L=256, QKV projection (K=512 → 3×512)
-  256     512   2048  Cortex-S: L=256, MLP first layer (K=512 → 4×512)
-  8192    512   1536  Cortex-S: B×L=32×256, QKV
-  8192    512   2048  Cortex-S: B×L=32×256, MLP
-  8192    256   768   Cortex-XS: D=256, QKV (3×256)
+  256     512   1536  Cortex-S: L=256, QKV projection (K=512 → 3x512)
+  256     512   2048  Cortex-S: L=256, MLP first layer (K=512 → 4x512)
+  8192    512   1536  Cortex-S: BxL=32x256, QKV
+  8192    512   2048  Cortex-S: BxL=32x256, MLP
+  8192    256   768   Cortex-XS: D=256, QKV (3x256)
   8192    512   512   Self-attn output projection (K=512 → 512)
   1       512   2048  Single-token decode (streaming)
 
@@ -78,12 +78,12 @@ To profile the PyTorch reference path on MPS:
 
 try:
     import triton  # noqa: F401
+
     _TRITON_AVAILABLE = True
 except ImportError:
     _TRITON_AVAILABLE = False
 
-from cortex.kernels.fused_rmsnorm import rms_norm_linear, rms_norm_linear_reference
-
+from cortex.kernels.fused_rmsnorm import rms_norm_linear, rms_norm_linear_reference  # noqa: E402
 
 # ── Timing helpers ────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ def _bench(fn, args: tuple, *, warmup: int = 25, iters: int = 100) -> float:
 def _bandwidth_gbs(M: int, K: int, N: int, dtype: torch.dtype, time_ms: float) -> float:
     """Achieved HBM bandwidth in GB/s using the fused-kernel theoretical minimum.
 
-    Fused minimum: 2×M×K (x read twice) + K×N (weight) + M×N (output)
+    Fused minimum: 2xMxK (x read twice) + KxN (weight) + MxN (output)
     """
     dtype_bytes = 2 if dtype == torch.bfloat16 else 4
     bytes_moved = (2 * M * K + K * N + M * N) * dtype_bytes
@@ -120,13 +120,13 @@ def _bandwidth_gbs(M: int, K: int, N: int, dtype: torch.dtype, time_ms: float) -
 
 
 SHAPES: list[tuple[int, int, int, str]] = [
-    (256,   512,  1536, "Cortex-S L=256, QKV projection"),
-    (256,   512,  2048, "Cortex-S L=256, MLP first layer"),
-    (8192,  512,  1536, "Cortex-S B×L=8192, QKV projection"),
-    (8192,  512,  2048, "Cortex-S B×L=8192, MLP first layer"),
-    (8192,  256,  768,  "Cortex-XS B×L=8192, QKV (D=256)"),
-    (8192,  512,  512,  "Cortex-S output projection"),
-    (1,     512,  2048, "single-token decode"),
+    (256, 512, 1536, "Cortex-S L=256, QKV projection"),
+    (256, 512, 2048, "Cortex-S L=256, MLP first layer"),
+    (8192, 512, 1536, "Cortex-S BxL=8192, QKV projection"),
+    (8192, 512, 2048, "Cortex-S BxL=8192, MLP first layer"),
+    (8192, 256, 768, "Cortex-XS BxL=8192, QKV (D=256)"),
+    (8192, 512, 512, "Cortex-S output projection"),
+    (1, 512, 2048, "single-token decode"),
 ]
 
 
@@ -153,24 +153,27 @@ def run(
 
     for M, K, N, label in SHAPES:
         torch.manual_seed(0)
-        x     = torch.randn(M, K, device=device, dtype=dtype)
+        x = torch.randn(M, K, device=device, dtype=dtype)
         gamma = torch.ones(K, device=device, dtype=dtype)
-        w     = torch.randn(K, N, device=device, dtype=dtype)
+        w = torch.randn(K, N, device=device, dtype=dtype)
 
-        t_ref    = _bench(rms_norm_linear_reference, (x, gamma, w, None), warmup=warmup, iters=iters)
-        t_triton = _bench(rms_norm_linear,           (x, gamma, w),       warmup=warmup, iters=iters)
+        t_ref = _bench(rms_norm_linear_reference, (x, gamma, w, None), warmup=warmup, iters=iters)
+        t_triton = _bench(rms_norm_linear, (x, gamma, w), warmup=warmup, iters=iters)
 
         speedup = t_ref / t_triton
-        bw_ref  = _bandwidth_gbs(M, K, N, dtype, t_ref)
-        bw_tri  = _bandwidth_gbs(M, K, N, dtype, t_triton)
+        bw_ref = _bandwidth_gbs(M, K, N, dtype, t_ref)
+        bw_tri = _bandwidth_gbs(M, K, N, dtype, t_triton)
 
         row = {
-            "M": M, "K": K, "N": N, "label": label,
-            "dtype":     str(dtype),
-            "ref_ms":    round(t_ref,    4),
+            "M": M,
+            "K": K,
+            "N": N,
+            "label": label,
+            "dtype": str(dtype),
+            "ref_ms": round(t_ref, 4),
             "triton_ms": round(t_triton, 4),
-            "speedup":   round(speedup,  2),
-            "ref_bw_gbs":    round(bw_ref, 1),
+            "speedup": round(speedup, 2),
+            "ref_bw_gbs": round(bw_ref, 1),
             "triton_bw_gbs": round(bw_tri, 1),
         }
         results.append(row)
@@ -185,9 +188,9 @@ def run(
     output.parent.mkdir(parents=True, exist_ok=True)
     meta = {
         "benchmark": "fused_rmsnorm_linear",
-        "device":    torch.cuda.get_device_name(),
-        "dtype":     str(dtype),
-        "results":   results,
+        "device": torch.cuda.get_device_name(),
+        "dtype": str(dtype),
+        "results": results,
     }
     output.write_text(json.dumps(meta, indent=2))
     print(f"Results written to {output}")
@@ -196,11 +199,12 @@ def run(
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="benchmarks/kernels/fused_rmsnorm.json", type=Path)
     parser.add_argument("--dtype", default="bfloat16", choices=["float32", "bfloat16"])
     parser.add_argument("--warmup", type=int, default=25)
-    parser.add_argument("--iters",  type=int, default=100)
+    parser.add_argument("--iters", type=int, default=100)
     args = parser.parse_args()
 
     if not torch.cuda.is_available():

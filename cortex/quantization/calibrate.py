@@ -11,8 +11,8 @@ Quantization scheme
 Weights (per output channel):
     scale_w[c] = max(|W[c, :]|) / 127.0
     W_int8[c, :] = round(W[c, :] / scale_w[c]).clamp(-127, 127)
-    Reconstruction: W_dq[c, :] = W_int8[c, :] × scale_w[c]
-    Error: |W - W_dq| ≤ 0.5 × scale_w[c]   (at most 0.5 LSB per element)
+    Reconstruction: W_dq[c, :] = W_int8[c, :] x scale_w[c]
+    Error: |W - W_dq| ≤ 0.5 x scale_w[c]   (at most 0.5 LSB per element)
 
 Activations (per tensor, tracked across calibration batches):
     scale_a = percentile_99(|x|) / 127.0
@@ -22,7 +22,7 @@ Why per-channel weights?
     In transformer linear layers, weight rows (output neurons) span very
     different dynamic ranges.  Per-channel scales prevent the narrow-range
     rows from being drowned out by one large-magnitude row.  Per-tensor weight
-    quantization loses ~0.5–2% R² in typical transformer decoders; per-channel
+    quantization loses ~0.5-2% R² in typical transformer decoders; per-channel
     typically loses <0.1%.
 
 Skipped layers
@@ -33,15 +33,14 @@ Skipped layers
     Bias vectors: per-neuron biases are tiny; not quantized.
 
 Memory savings (theoretical, weights only):
-    float32 → int8:  ×0.25 of linear-layer weight storage
-    bfloat16 → int8: ×0.50 of linear-layer weight storage
+    float32 → int8:  x0.25 of linear-layer weight storage
+    bfloat16 → int8: x0.50 of linear-layer weight storage
     At Cortex-S scale: ~35 linear layers, ~22 M weight parameters.
     bf16 weight storage: 44 MB → INT8: 22 MB (saves 22 MB / 44.2% reduction).
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -49,7 +48,6 @@ from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 # ── Calibration: collect activation statistics ────────────────────────────────
 
@@ -121,8 +119,9 @@ def remove_calibration_hooks(hooks: dict[str, CalibrationHook]) -> None:
 @dataclass
 class LayerScales:
     """Quantization scales for one linear layer."""
-    weight_scale: torch.Tensor   # (out_features,) float32 — per output channel
-    act_scale: float             # scalar — derived from calibration stats
+
+    weight_scale: torch.Tensor  # (out_features,) float32 — per output channel
+    act_scale: float  # scalar — derived from calibration stats
 
 
 def derive_scales(
@@ -177,8 +176,8 @@ class QuantizedLinear(nn.Module):
     compatible with MPS, CPU, and CUDA.
 
     Note on compute: dequantization adds one elementwise multiply per forward
-    pass (weight_int8 × scale → fp).  At Cortex-S scale this is negligible
-    (22 M elements × one operation).  True int8 matmul via cuBLAS is a future
+    pass (weight_int8 x scale → fp).  At Cortex-S scale this is negligible
+    (22 M elements x one operation).  True int8 matmul via cuBLAS is a future
     optimisation that would halve compute cost too.
     """
 
@@ -188,17 +187,17 @@ class QuantizedLinear(nn.Module):
     def __init__(
         self,
         weight_int8: torch.Tensor,  # (out_features, in_features), int8
-        weight_scale: torch.Tensor, # (out_features,), float32
+        weight_scale: torch.Tensor,  # (out_features,), float32
         bias: torch.Tensor | None,
     ) -> None:
         super().__init__()
-        self.in_features  = weight_int8.shape[1]
+        self.in_features = weight_int8.shape[1]
         self.out_features = weight_int8.shape[0]
 
         # Buffers participate in state_dict and device transfers; they are not
         # optimiser parameters.
-        self.register_buffer("weight_int8",   weight_int8)
-        self.register_buffer("weight_scale",  weight_scale)
+        self.register_buffer("weight_int8", weight_int8)
+        self.register_buffer("weight_scale", weight_scale)
         if bias is not None:
             self.register_buffer("bias", bias)
         else:
@@ -209,7 +208,7 @@ class QuantizedLinear(nn.Module):
         cls,
         linear: nn.Linear,
         scales: LayerScales,
-    ) -> "QuantizedLinear":
+    ) -> QuantizedLinear:
         """Quantize a float nn.Linear using pre-computed scales."""
         w = linear.weight.detach().float()
 
@@ -221,7 +220,7 @@ class QuantizedLinear(nn.Module):
         return cls(w_int8, scales.weight_scale.to(w.device), bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Dequantize: (out, in) int8 × (out, 1) float32 → compute dtype
+        # Dequantize: (out, in) int8 x (out, 1) float32 → compute dtype
         w_dq = self.weight_int8.float() * self.weight_scale[:, None]
         return F.linear(x, w_dq.to(x.dtype), self.bias)
 
@@ -254,6 +253,7 @@ def convert_model(
         Quantized model.
     """
     import copy
+
     if not inplace:
         model = copy.deepcopy(model)
 
@@ -346,12 +346,14 @@ def calibration_summary(
     rows = []
     for name, hook in hooks.items():
         s = scales.get(name)
-        rows.append({
-            "layer":           name,
-            "calib_batches":   hook.stats.n_batches,
-            "act_abs_max_p99": round(hook.stats.percentile_99, 6),
-            "act_scale":       round(s.act_scale, 8) if s else None,
-            "weight_scale_min": round(float(s.weight_scale.min()), 8) if s else None,
-            "weight_scale_max": round(float(s.weight_scale.max()), 8) if s else None,
-        })
+        rows.append(
+            {
+                "layer": name,
+                "calib_batches": hook.stats.n_batches,
+                "act_abs_max_p99": round(hook.stats.percentile_99, 6),
+                "act_scale": round(s.act_scale, 8) if s else None,
+                "weight_scale_min": round(float(s.weight_scale.min()), 8) if s else None,
+                "weight_scale_max": round(float(s.weight_scale.max()), 8) if s else None,
+            }
+        )
     return rows

@@ -14,8 +14,8 @@ Metrics reported
 Bandwidth calculation
 ---------------------
   Theoretical minimum bytes for fused kernel at mask density d:
-      Reads:  Q load (B×H×L×Dh) + K load (d × B×H×E×Dh) + V load (d × B×H×E×Dh)
-      Writes: output (B×H×L×Dh)
+      Reads:  Q load (BxHxLxDh) + K load (d x BxHxExDh) + V load (d x BxHxExDh)
+      Writes: output (BxHxLxDh)
   We report achieved bandwidth using the DENSE (d=1) byte count so numbers are
   comparable across density levels — it shows how efficiently bandwidth is used
   relative to the dense case.
@@ -27,7 +27,7 @@ Input shapes
     B=8,  H=8, L=256, E=512,  Dh=64  — batch=8 inference
     B=32, H=8, L=256, E=512,  Dh=64  — training batch
     B=1,  H=4, L=128, E=256,  Dh=32  — Cortex-XS
-    B=32, H=8, L=256, E=2048, Dh=64  — continuous batching (4× events)
+    B=32, H=8, L=256, E=2048, Dh=64  — continuous batching (4x events)
 
   Three mask densities are swept for each shape: dense (1.0), 50%, 25%.
 
@@ -65,17 +65,17 @@ To profile the PyTorch reference path on MPS:
 
 try:
     import triton  # noqa: F401
+
     _TRITON_AVAILABLE = True
 except ImportError:
     _TRITON_AVAILABLE = False
 
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: E402
 
-from cortex.kernels.sparse_xattn import (
+from cortex.kernels.sparse_xattn import (  # noqa: E402
     sparse_cross_attention,
     sparse_cross_attention_reference,
 )
-
 
 # ── Timing helpers ────────────────────────────────────────────────────────────
 
@@ -99,7 +99,11 @@ def _bench(fn, args: tuple, *, warmup: int = 25, iters: int = 100) -> float:
 
 
 def _bandwidth_gbs(
-    B: int, H: int, L: int, E: int, Dh: int,
+    B: int,
+    H: int,
+    L: int,
+    E: int,
+    Dh: int,
     dtype: torch.dtype,
     time_ms: float,
     density: float = 1.0,
@@ -119,7 +123,7 @@ def _bandwidth_gbs(
 def _make_block_mask(n_q: int, n_k: int, density: float) -> torch.Tensor:
     """Build a block mask with the given fraction of True tiles.
 
-    Uses a deterministic pattern (first density × n_k columns per row) rather
+    Uses a deterministic pattern (first density x n_k columns per row) rather
     than random, so results are reproducible.
     """
     if density >= 1.0:
@@ -136,11 +140,11 @@ def _make_block_mask(n_q: int, n_k: int, density: float) -> torch.Tensor:
 
 
 SHAPES: list[tuple[int, int, int, int, int, str]] = [
-    (1,  8, 256, 512,  64, "Cortex-S single sample"),
-    (8,  8, 256, 512,  64, "Cortex-S batch=8"),
-    (32, 8, 256, 512,  64, "Cortex-S training batch"),
-    (1,  4, 128, 256,  32, "Cortex-XS"),
-    (32, 8, 256, 2048, 64, "continuous batching, 4× events"),
+    (1, 8, 256, 512, 64, "Cortex-S single sample"),
+    (8, 8, 256, 512, 64, "Cortex-S batch=8"),
+    (32, 8, 256, 512, 64, "Cortex-S training batch"),
+    (1, 4, 128, 256, 32, "Cortex-XS"),
+    (32, 8, 256, 2048, 64, "continuous batching, 4x events"),
 ]
 
 DENSITIES: list[float] = [1.0, 0.5, 0.25]
@@ -177,7 +181,7 @@ def run(
             q = torch.randn(B, H, L, Dh, device=device, dtype=dtype)
             k = torch.randn(B, H, E, Dh, device=device, dtype=dtype)
             v = torch.randn(B, H, E, Dh, device=device, dtype=dtype)
-            scale = Dh ** -0.5
+            scale = Dh**-0.5
 
             n_q = math.ceil(L / BLOCK_L)
             n_k = math.ceil(E / BLOCK_E)
@@ -187,35 +191,43 @@ def run(
             t_ref = _bench(
                 sparse_cross_attention_reference,
                 (q, k, v, mask, BLOCK_L, BLOCK_E, scale),
-                warmup=warmup, iters=iters,
+                warmup=warmup,
+                iters=iters,
             )
 
             # Dense SDPA (no mask, flash-attention backend)
             t_sdpa = _bench(
                 F.scaled_dot_product_attention,
                 (q, k, v),
-                warmup=warmup, iters=iters,
+                warmup=warmup,
+                iters=iters,
             )
 
             # Triton sparse kernel
             t_triton = _bench(
                 sparse_cross_attention,
                 (q, k, v, mask, BLOCK_L, BLOCK_E, scale),
-                warmup=warmup, iters=iters,
+                warmup=warmup,
+                iters=iters,
             )
 
-            speedup  = t_ref / t_triton
-            bw_tri   = _bandwidth_gbs(B, H, L, E, Dh, dtype, t_triton, density)
+            speedup = t_ref / t_triton
+            bw_tri = _bandwidth_gbs(B, H, L, E, Dh, dtype, t_triton, density)
             act_dens = mask.float().mean().item()
 
             row = {
-                "B": B, "H": H, "L": L, "E": E, "Dh": Dh, "label": label,
-                "dtype":    str(dtype),
-                "density":  round(act_dens, 3),
-                "ref_ms":   round(t_ref,    4),
-                "sdpa_ms":  round(t_sdpa,   4),
+                "B": B,
+                "H": H,
+                "L": L,
+                "E": E,
+                "Dh": Dh,
+                "label": label,
+                "dtype": str(dtype),
+                "density": round(act_dens, 3),
+                "ref_ms": round(t_ref, 4),
+                "sdpa_ms": round(t_sdpa, 4),
                 "triton_ms": round(t_triton, 4),
-                "speedup":  round(speedup,  2),
+                "speedup": round(speedup, 2),
                 "triton_bw_gbs": round(bw_tri, 1),
             }
             results.append(row)
@@ -230,11 +242,11 @@ def run(
     output.parent.mkdir(parents=True, exist_ok=True)
     meta = {
         "benchmark": "sparse_cross_attention",
-        "device":    torch.cuda.get_device_name(),
-        "dtype":     str(dtype),
-        "block_l":   BLOCK_L,
-        "block_e":   BLOCK_E,
-        "results":   results,
+        "device": torch.cuda.get_device_name(),
+        "dtype": str(dtype),
+        "block_l": BLOCK_L,
+        "block_e": BLOCK_E,
+        "results": results,
     }
     output.write_text(json.dumps(meta, indent=2))
     print(f"Results written to {output}")
@@ -243,11 +255,12 @@ def run(
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="benchmarks/kernels/sparse_xattn.json", type=Path)
     parser.add_argument("--dtype", default="bfloat16", choices=["float32", "bfloat16"])
     parser.add_argument("--warmup", type=int, default=25)
-    parser.add_argument("--iters",  type=int, default=100)
+    parser.add_argument("--iters", type=int, default=100)
     args = parser.parse_args()
 
     if not torch.cuda.is_available():

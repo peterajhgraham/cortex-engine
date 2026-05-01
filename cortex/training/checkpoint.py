@@ -119,9 +119,7 @@ def _load_dcp(
 ) -> dict[str, Any]:
     """Sharded load via torch.distributed.checkpoint."""
     if not dist.is_initialized():
-        raise RuntimeError(
-            "DCP checkpoint at {} requires torch.distributed to be initialized".format(path)
-        )
+        raise RuntimeError(f"DCP checkpoint at {path} requires torch.distributed to be initialized")
 
     load_fn = _resolve_dcp_load()
     state_dict: dict[str, Any] = {

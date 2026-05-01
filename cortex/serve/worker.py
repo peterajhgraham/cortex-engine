@@ -34,6 +34,7 @@ The worker returns a parallel list of result dicts:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -129,14 +130,10 @@ class InferenceWorker:
 
     def warmup(self, n_iters: int = 3) -> None:
         """Run dummy batches to warm the model and trigger Triton autotune."""
-        cfg = self.config
         dummy = [
             {
                 "request_id": f"warmup_{i}",
-                "events": [
-                    {"neuron_id": 0, "time_bin": 0, "value": 0}
-                    for _ in range(64)
-                ],
+                "events": [{"neuron_id": 0, "time_bin": 0, "value": 0} for _ in range(64)],
             }
             for i in range(min(n_iters, self.max_batch_size))
         ]
@@ -163,7 +160,7 @@ class InferenceWorker:
 
         # ── Build flat event tensors ──────────────────────────────────────────
         all_nids: list[int] = []
-        all_tbs:  list[int] = []
+        all_tbs: list[int] = []
         all_vals: list[int] = []
         all_bidx: list[int] = []
 
@@ -189,14 +186,12 @@ class InferenceWorker:
 
         # ── Tensor construction (with optional H2D on copy stream) ────────────
         copy_ctx = (
-            torch.cuda.stream(self._copy_stream)
-            if self._copy_stream is not None
-            else nullcontext()
+            torch.cuda.stream(self._copy_stream) if self._copy_stream is not None else nullcontext()
         )
 
         with copy_ctx:
             nids = torch.tensor(all_nids, dtype=torch.int64, device=self.device)
-            tbs  = torch.tensor(all_tbs,  dtype=torch.int64, device=self.device)
+            tbs = torch.tensor(all_tbs, dtype=torch.int64, device=self.device)
             vals = torch.tensor(all_vals, dtype=torch.int64, device=self.device)
             bidx = torch.tensor(all_bidx, dtype=torch.int64, device=self.device)
 
@@ -222,11 +217,9 @@ class InferenceWorker:
         # ── Record metrics ────────────────────────────────────────────────────
         if self.device.type == "cuda":
             GPU_MEMORY_USED.set(torch.cuda.memory_allocated(self.device))
-            try:
+            with contextlib.suppress(Exception):
                 # torch.cuda.utilization() calls NVML; may fail if nvml unavailable
                 GPU_UTILIZATION.set(float(torch.cuda.utilization(self.device)))
-            except Exception:
-                pass
 
         inference_ms = (time.perf_counter() - t0) * 1000
         INFERENCE_LATENCY.observe(inference_ms / 1000.0)

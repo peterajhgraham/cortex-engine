@@ -22,30 +22,26 @@ Structure:
 
   Group 5 — model_weight_bytes:
       Verify that INT8 model uses less memory than float32.
-      Verify the reduction is approximately 4× for linear layers.
+      Verify the reduction is approximately 4x for linear layers.
 """
 
 from __future__ import annotations
 
+import pytest
 import torch
 import torch.nn as nn
 
-import pytest
-
 from cortex.quantization.calibrate import (
     ActivationStats,
-    CalibrationHook,
     LayerScales,
     QuantizedLinear,
     attach_calibration_hooks,
-    calibration_summary,
     convert_model,
     count_quantized_linears,
     derive_scales,
     model_weight_bytes,
     remove_calibration_hooks,
 )
-
 
 # ── Group 1: ActivationStats ──────────────────────────────────────────────────
 
@@ -107,11 +103,11 @@ class TestQuantizedLinear:
             assert out.dtype == dtype
 
     def test_with_bias(self):
-        ql, linear, scales = self._make_layer(32, 16, bias=True)
+        ql, _, _ = self._make_layer(32, 16, bias=True)
         assert ql.bias is not None
 
     def test_no_bias(self):
-        ql, linear, scales = self._make_layer(32, 16, bias=False)
+        ql, _, _ = self._make_layer(32, 16, bias=False)
         assert ql.bias is None
 
     def test_weight_stored_as_int8(self):
@@ -138,7 +134,7 @@ class TestQuantizedLinear:
         ref = linear(x)
         out = ql(x)
 
-        # Max error is bounded by 0.5 × scale × |x|_max per output neuron
+        # Max error is bounded by 0.5 x scale x |x|_max per output neuron
         # In practice much tighter; we just verify it's in a reasonable range
         max_err = (out - ref).abs().max().item()
         assert max_err < 1.0, f"Max quant error {max_err:.4f} seems too large"
@@ -227,8 +223,9 @@ class TestCalibration:
 
         for name, module in model.named_modules():
             if isinstance(module, nn.Linear) and name in scales:
-                assert scales[name].weight_scale.shape == (module.out_features,), \
-                    f"weight_scale shape mismatch for {name}"
+                assert scales[name].weight_scale.shape == (
+                    module.out_features,
+                ), f"weight_scale shape mismatch for {name}"
 
     def test_no_scales_without_forward(self):
         """If calibration never ran, derive_scales should return empty dict."""
@@ -316,7 +313,7 @@ class TestModelWeightBytes:
         assert int8_bytes < fp_bytes, f"INT8 ({int8_bytes}) not smaller than fp32 ({fp_bytes})"
 
     def test_reduction_approximately_4x_for_pure_linear_model(self):
-        """A model with only Linear layers should see ~4× weight reduction.
+        """A model with only Linear layers should see ~4x weight reduction.
 
         convert_model walks named_children(), so the model root must be a
         container (e.g., nn.Sequential), not a bare nn.Linear.
@@ -337,4 +334,4 @@ class TestModelWeightBytes:
         # fp32 weights: 512*512*4 = 1048576 bytes
         # scale buffer: 512*4 = 2048 bytes (small overhead)
         reduction = fp_bytes / int8_bytes
-        assert 2.5 < reduction < 5.0, f"Expected ~4× reduction, got {reduction:.2f}×"
+        assert 2.5 < reduction < 5.0, f"Expected ~4x reduction, got {reduction:.2f}x"

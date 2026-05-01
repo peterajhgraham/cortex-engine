@@ -69,6 +69,7 @@ def test_select_device_sets_mps_fallback_env_var(monkeypatch) -> None:  # type: 
     ):
         select_device(preference="auto")
     import os
+
     assert os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
 
 

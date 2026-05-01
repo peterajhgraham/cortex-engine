@@ -18,7 +18,7 @@ Structure (canonical pattern for all kernel tests in this project):
 Tolerance rationale
 -------------------
   bfloat16: 8 bits of mantissa → rounding errors on order of 2^-7 ≈ 0.008.
-             Three additions accumulate up to 3×2^-7 ≈ 0.023 absolute error.
+             Three additions accumulate up to 3x2^-7 ≈ 0.023 absolute error.
              atol=1e-2 is tight enough to catch bugs but loose enough for bf16.
   float32:  24 bits of mantissa → rounding errors on order of 2^-23 ≈ 1e-7.
              Tight tolerances (1e-5 / 1e-5) are safe.
@@ -30,9 +30,8 @@ import pytest
 import torch
 
 from cortex.kernels.tokenizer import fused_tokenizer, fused_tokenizer_reference
-from cortex.models.config import CORTEX_S, CortexConfig
+from cortex.models.config import CortexConfig
 from cortex.models.tokenizer import SpikeTokenizer
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -94,7 +93,7 @@ class TestReference:
     def test_single_event(self):
         n_emb, t_emb, v_emb = _make_embs(N=8, T=16, V=4, D=32, device="cpu", dtype=torch.float32)
         nid = torch.tensor([3], dtype=torch.int64)
-        tb  = torch.tensor([7], dtype=torch.int64)
+        tb = torch.tensor([7], dtype=torch.int64)
         val = torch.tensor([1], dtype=torch.int64)
         out = fused_tokenizer_reference(n_emb, t_emb, v_emb, nid, tb, val)
         expected = n_emb[3] + t_emb[7] + v_emb[1]
@@ -105,7 +104,7 @@ class TestReference:
         n_emb, t_emb, v_emb = _make_embs(N=8, T=16, V=4, D=64, device="cpu", dtype=torch.float32)
         E = 100
         nid = torch.zeros(E, dtype=torch.int64)
-        tb  = torch.zeros(E, dtype=torch.int64)
+        tb = torch.zeros(E, dtype=torch.int64)
         val = torch.zeros(E, dtype=torch.int64)
         out = fused_tokenizer_reference(n_emb, t_emb, v_emb, nid, tb, val)
         assert out.shape == (E, 64)
@@ -120,11 +119,11 @@ class TestReference:
 @pytest.mark.parametrize(
     "E,D,N,T,V",
     [
-        (1,     64,  32,  64,   8),   # minimum E
-        (127,   64,  32,  64,   8),   # non-power-of-2 E
-        (128,   64,  256, 512,  8),   # small reference shape
-        (1024,  128, 256, 512,  8),   # medium shape
-        (4096,  256, 512, 1024, 8),   # large shape
+        (1, 64, 32, 64, 8),  # minimum E
+        (127, 64, 32, 64, 8),  # non-power-of-2 E
+        (128, 64, 256, 512, 8),  # small reference shape
+        (1024, 128, 256, 512, 8),  # medium shape
+        (4096, 256, 512, 1024, 8),  # large shape
         (16384, 512, 512, 1024, 16),  # Cortex-S production: batch=32, 512 events/sample
     ],
 )
@@ -138,8 +137,8 @@ def test_triton_matches_reference(E: int, D: int, N: int, T: int, V: int, dtype:
     n_emb, t_emb, v_emb = _make_embs(N, T, V, D, device, dtype)
     nid, tb, val = _make_ids(E, N, T, V, device)
 
-    ref  = fused_tokenizer_reference(n_emb, t_emb, v_emb, nid, tb, val)
-    out  = fused_tokenizer(n_emb, t_emb, v_emb, nid, tb, val)
+    ref = fused_tokenizer_reference(n_emb, t_emb, v_emb, nid, tb, val)
+    out = fused_tokenizer(n_emb, t_emb, v_emb, nid, tb, val)
 
     assert out.shape == (E, D)
     assert out.dtype == dtype
@@ -170,8 +169,8 @@ def test_triton_non_contiguous_indices():
     # Create non-contiguous tensors by striding
     big = torch.randint(0, 32, (E * 2,), device="cuda", dtype=torch.int64)
     nid = big[::2]  # non-contiguous stride-2 view
-    tb  = torch.randint(0, 64, (E,), device="cuda", dtype=torch.int64)
-    val = torch.randint(0, 8,  (E,), device="cuda", dtype=torch.int64)
+    tb = torch.randint(0, 64, (E,), device="cuda", dtype=torch.int64)
+    val = torch.randint(0, 8, (E,), device="cuda", dtype=torch.int64)
 
     ref = fused_tokenizer_reference(n_emb, t_emb, v_emb, nid, tb, val)
     out = fused_tokenizer(n_emb, t_emb, v_emb, nid, tb, val)
@@ -186,17 +185,25 @@ class TestSpikeTokenizerDispatch:
 
     def _tokenizer_and_inputs(self, use_kernels: bool, device: str):
         cfg = CortexConfig(
-            hidden_dim=64, num_layers=2, num_heads=4, head_dim=16,
-            num_latents=32, latent_dim=64, cross_attn_heads=4,
-            max_neurons=32, max_time_bins=64, spike_value_buckets=8,
-            behavior_dim=2, use_kernels=use_kernels,
+            hidden_dim=64,
+            num_layers=2,
+            num_heads=4,
+            head_dim=16,
+            num_latents=32,
+            latent_dim=64,
+            cross_attn_heads=4,
+            max_neurons=32,
+            max_time_bins=64,
+            spike_value_buckets=8,
+            behavior_dim=2,
+            use_kernels=use_kernels,
         )
         tok = SpikeTokenizer(cfg).to(device).eval()
         torch.manual_seed(7)
         E = 64
         nid = torch.randint(0, 32, (E,), device=device, dtype=torch.int64)
-        tb  = torch.randint(0, 64, (E,), device=device, dtype=torch.int64)
-        val = torch.randint(0, 8,  (E,), device=device, dtype=torch.int64)
+        tb = torch.randint(0, 64, (E,), device=device, dtype=torch.int64)
+        val = torch.randint(0, 8, (E,), device=device, dtype=torch.int64)
         return tok, nid, tb, val
 
     def test_cpu_fallback_always_works(self):
@@ -212,7 +219,7 @@ class TestSpikeTokenizerDispatch:
             pytest.skip("CUDA required to exercise the Triton path")
 
         tok_ref, nid, tb, val = self._tokenizer_and_inputs(use_kernels=False, device="cuda")
-        tok_ker, _,   _,  _   = self._tokenizer_and_inputs(use_kernels=True,  device="cuda")
+        tok_ker, _, _, _ = self._tokenizer_and_inputs(use_kernels=True, device="cuda")
         # Copy weights from ref tokenizer to kernel tokenizer so they're identical
         tok_ker.load_state_dict(tok_ref.state_dict())
 

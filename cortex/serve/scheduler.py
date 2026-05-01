@@ -100,9 +100,7 @@ class Scheduler:
         self.batch_timeout_s = batch_timeout_ms / 1000.0
         self.default_deadline_ms = default_deadline_ms
 
-        self.queue: asyncio.PriorityQueue[Request] = asyncio.PriorityQueue(
-            maxsize=max_queue_size
-        )
+        self.queue: asyncio.PriorityQueue[Request] = asyncio.PriorityQueue(maxsize=max_queue_size)
         self._stop = asyncio.Event()
         self._n_batches_processed = 0
 
@@ -145,9 +143,7 @@ class Scheduler:
         # Admission control: fail fast rather than block on a full queue
         if self.queue.full():
             ERROR_COUNTER.labels(error_type="queue_full").inc()
-            raise QueueFullError(
-                f"scheduler queue at capacity ({self.max_queue_size}); try again"
-            )
+            raise QueueFullError(f"scheduler queue at capacity ({self.max_queue_size}); try again")
 
         await self.queue.put(req)
         QUEUE_DEPTH.set(self.queue.qsize())
@@ -166,7 +162,7 @@ class Scheduler:
             # ── Wait for the first request ────────────────────────────────────
             try:
                 first = await asyncio.wait_for(self.queue.get(), timeout=0.1)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             # ── Drain up to max_batch_size within batch_timeout ───────────────
@@ -180,7 +176,7 @@ class Scheduler:
                 try:
                     req = await asyncio.wait_for(self.queue.get(), timeout=remaining)
                     batch.append(req)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     break
 
             QUEUE_DEPTH.set(self.queue.qsize())
@@ -213,7 +209,7 @@ class Scheduler:
                     otel_context.detach(ctx_token)
 
             # ── Resolve per-request futures ───────────────────────────────────
-            for req, result in zip(batch, results):
+            for req, result in zip(batch, results, strict=True):
                 if not req.future.done():
                     req.future.set_result(result)
 

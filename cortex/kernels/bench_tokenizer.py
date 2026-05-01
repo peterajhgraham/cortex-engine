@@ -16,18 +16,18 @@ Metrics reported
 Bandwidth calculation
 ---------------------
   Theoretical minimum bytes transferred (fused kernel):
-      Reads:  3 × E × D (one gather per embedding table)
-      Writes: 1 × E × D (output)
-      Total:  4 × E × D × sizeof(dtype)
+      Reads:  3 x E x D (one gather per embedding table)
+      Writes: 1 x E x D (output)
+      Total:  4 x E x D x sizeof(dtype)
 
   PyTorch eager (unfused):
-      Reads:  3 × E × D (gathers) + 4 × E × D (2 additions, each reads 2 tensors)
-      Writes: 2 × E × D (intermediates) + 1 × E × D (final)
-      Total: ~10 × E × D × sizeof(dtype)  [may be partially cached at small E]
+      Reads:  3 x E x D (gathers) + 4 x E x D (2 additions, each reads 2 tensors)
+      Writes: 2 x E x D (intermediates) + 1 x E x D (final)
+      Total: ~10 x E x D x sizeof(dtype)  [may be partially cached at small E]
 
   We use the theoretical minimum for BOTH when computing bandwidth, so the
   metric tells us how efficiently each implementation uses HBM bandwidth:
-      bandwidth = 4 × E × D × sizeof(dtype) / time
+      bandwidth = 4 x E x D x sizeof(dtype) / time
 
 Input shapes
 ------------
@@ -78,12 +78,12 @@ To profile the PyTorch reference path on MPS:
 
 try:
     import triton  # noqa: F401
+
     _TRITON_AVAILABLE = True
 except ImportError:
     _TRITON_AVAILABLE = False
 
-from cortex.kernels.tokenizer import fused_tokenizer, fused_tokenizer_reference
-
+from cortex.kernels.tokenizer import fused_tokenizer, fused_tokenizer_reference  # noqa: E402
 
 # ── Timing helpers ────────────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ def _bench(fn, args: tuple, *, warmup: int = 25, iters: int = 100) -> float:
 def _bandwidth_gbs(E: int, D: int, dtype: torch.dtype, time_ms: float) -> float:
     """Achieved HBM bandwidth in GB/s using the theoretical-minimum byte count."""
     dtype_bytes = 2 if dtype == torch.bfloat16 else 4  # bf16 or float32
-    bytes_moved = 4 * E * D * dtype_bytes              # 3 reads + 1 write
+    bytes_moved = 4 * E * D * dtype_bytes  # 3 reads + 1 write
     return bytes_moved / (time_ms * 1e-3) / 1e9
 
 
@@ -117,9 +117,9 @@ def _bandwidth_gbs(E: int, D: int, dtype: torch.dtype, time_ms: float) -> float:
 
 
 SHAPES: list[tuple[int, int, str]] = [
-    (512,    512, "single sample (MC_Maze 600ms)"),
-    (2_048,  512, "batch=4, Cortex-S"),
-    (8_192,  512, "batch=16, Cortex-S"),
+    (512, 512, "single sample (MC_Maze 600ms)"),
+    (2_048, 512, "batch=4, Cortex-S"),
+    (8_192, 512, "batch=16, Cortex-S"),
     (16_384, 512, "batch=32, Cortex-S  [training batch]"),
     (65_536, 512, "batch=128, Cortex-S [continuous batching]"),
     (16_384, 256, "batch=32, Cortex-XS (D=256)"),
@@ -151,25 +151,27 @@ def run(
         n_emb = torch.randn(VOCAB["N"], D, device=device, dtype=dtype)
         t_emb = torch.randn(VOCAB["T"], D, device=device, dtype=dtype)
         v_emb = torch.randn(VOCAB["V"], D, device=device, dtype=dtype)
-        nid   = torch.randint(0, VOCAB["N"], (E,), device=device)
-        tb    = torch.randint(0, VOCAB["T"], (E,), device=device)
-        val   = torch.randint(0, VOCAB["V"], (E,), device=device)
+        nid = torch.randint(0, VOCAB["N"], (E,), device=device)
+        tb = torch.randint(0, VOCAB["T"], (E,), device=device)
+        val = torch.randint(0, VOCAB["V"], (E,), device=device)
 
         args = (n_emb, t_emb, v_emb, nid, tb, val)
-        t_ref    = _bench(fused_tokenizer_reference, args, warmup=warmup, iters=iters)
-        t_triton = _bench(fused_tokenizer,           args, warmup=warmup, iters=iters)
+        t_ref = _bench(fused_tokenizer_reference, args, warmup=warmup, iters=iters)
+        t_triton = _bench(fused_tokenizer, args, warmup=warmup, iters=iters)
 
-        speedup  = t_ref / t_triton
-        bw_ref   = _bandwidth_gbs(E, D, dtype, t_ref)
-        bw_tri   = _bandwidth_gbs(E, D, dtype, t_triton)
+        speedup = t_ref / t_triton
+        bw_ref = _bandwidth_gbs(E, D, dtype, t_ref)
+        bw_tri = _bandwidth_gbs(E, D, dtype, t_triton)
 
         row = {
-            "E": E, "D": D, "label": label,
+            "E": E,
+            "D": D,
+            "label": label,
             "dtype": str(dtype),
-            "ref_ms":    round(t_ref,    4),
+            "ref_ms": round(t_ref, 4),
             "triton_ms": round(t_triton, 4),
-            "speedup":   round(speedup,  2),
-            "ref_bw_gbs":    round(bw_ref, 1),
+            "speedup": round(speedup, 2),
+            "ref_bw_gbs": round(bw_ref, 1),
             "triton_bw_gbs": round(bw_tri, 1),
         }
         results.append(row)
@@ -183,9 +185,9 @@ def run(
     output.parent.mkdir(parents=True, exist_ok=True)
     meta = {
         "benchmark": "fused_tokenizer",
-        "device":    torch.cuda.get_device_name(),
-        "dtype":     str(dtype),
-        "results":   results,
+        "device": torch.cuda.get_device_name(),
+        "dtype": str(dtype),
+        "results": results,
     }
     output.write_text(json.dumps(meta, indent=2))
     print(f"Results written to {output}")
@@ -194,11 +196,12 @@ def run(
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="benchmarks/kernels/tokenizer.json", type=Path)
     parser.add_argument("--dtype", default="bfloat16", choices=["float32", "bfloat16"])
     parser.add_argument("--warmup", type=int, default=25)
-    parser.add_argument("--iters",  type=int, default=100)
+    parser.add_argument("--iters", type=int, default=100)
     args = parser.parse_args()
 
     if not torch.cuda.is_available():

@@ -16,8 +16,8 @@ loop also feeds these baselines without parallel pipelines.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 import torch
@@ -186,13 +186,9 @@ class DenseWindowDataset(Dataset):
         session = self.nlb.sessions[session_idx]
         window = session.bin_counts[start:end]  # (T, N_session)
 
-        features = torch.zeros(
-            (self.nlb.window_bins, self.total_neurons), dtype=torch.float32
-        )
+        features = torch.zeros((self.nlb.window_bins, self.total_neurons), dtype=torch.float32)
         offset = session.neuron_id_offset
-        features[:, offset : offset + window.shape[1]] = torch.from_numpy(
-            window.astype(np.float32)
-        )
+        features[:, offset : offset + window.shape[1]] = torch.from_numpy(window.astype(np.float32))
         # Z-score to match NLBDataset normalization so baseline R² is comparable.
         raw = session.behavior[end - 1].astype(np.float32, copy=False)
         behavior = (raw - self.nlb._behavior_mean) / self.nlb._behavior_std

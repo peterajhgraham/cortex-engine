@@ -20,7 +20,6 @@ from cortex.training.eval import (
     r2_score_per_dim,
 )
 
-
 # ── r2_score ───────────────────────────────────────────────────────────────────
 
 

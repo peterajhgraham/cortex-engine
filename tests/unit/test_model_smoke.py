@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from cortex.models import CortexModel, CortexConfig
+from cortex.models import CortexConfig, CortexModel
 from cortex.models.config import CORTEX_XS
 
 

@@ -66,7 +66,7 @@ def bucket_values(counts: np.ndarray, n_buckets: int) -> np.ndarray:
 
     Buckets are inclusive at both ends: a count of 0 is bucket 0, and any count
     >= n_buckets - 1 is clamped to the top bucket. This matches the POYO scheme
-    where most bins have 0–1 spikes and the head can ignore rare large counts.
+    where most bins have 0-1 spikes and the head can ignore rare large counts.
     """
     if n_buckets <= 0:
         raise ValueError(f"n_buckets must be positive, got {n_buckets}")
@@ -323,7 +323,9 @@ def build_dataloaders(
 
         sampler = DistributedSampler(train_ds, num_replicas=world_size, rank=rank)
 
-    batch_size = cfg.get("batch_size", 32) if hasattr(cfg, "get") else getattr(cfg, "batch_size", 32)
+    batch_size = (
+        cfg.get("batch_size", 32) if hasattr(cfg, "get") else getattr(cfg, "batch_size", 32)
+    )
     num_workers = getattr(cfg, "num_workers", 0)
     pin_memory = getattr(cfg, "pin_memory", False)
     prefetch_factor = getattr(cfg, "prefetch_factor", None)
@@ -499,7 +501,7 @@ def _resample_to_bins(
     bin_size_s: float,
 ) -> np.ndarray:
     """Downsample a high-rate signal to one sample per time bin by averaging."""
-    samples_per_bin = max(int(round(bin_size_s * src_rate_hz)), 1)
+    samples_per_bin = max(round(bin_size_s * src_rate_hz), 1)
 
     n_complete = (signal.shape[0] // samples_per_bin) * samples_per_bin
     trimmed = signal[:n_complete]

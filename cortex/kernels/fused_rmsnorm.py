@@ -11,12 +11,12 @@ appears twice per block:
   2. norm_mlp(latents)  → mlp[0]   (D → 4D)
 
 PyTorch runs this as two separate kernel launches:
-  - LayerNorm kernel: reads x (M×K), writes x_norm (M×K)
-  - Linear kernel:    reads x_norm (M×K) and W (K×N), writes output (M×N)
+  - LayerNorm kernel: reads x (MxK), writes x_norm (MxK)
+  - Linear kernel:    reads x_norm (MxK) and W (KxN), writes output (MxN)
 
 The intermediate x_norm tensor is written to HBM and immediately read back.
-At M×K = 8192 × 512 in float32, that is 16 MB of avoidable HBM traffic per
-fused pair, or 16 MB × 2 pairs × 7 blocks = 224 MB per forward pass.
+At MxK = 8192 x 512 in float32, that is 16 MB of avoidable HBM traffic per
+fused pair, or 16 MB x 2 pairs x 7 blocks = 224 MB per forward pass.
 
 Fused kernel
 ------------
@@ -26,20 +26,20 @@ during the matmul K reduction.  It uses a *two-pass* strategy:
   Pass 1: iterate over K in BLOCK_K tiles, accumulating x² sum per row
           → compute rms[m] = sqrt(mean_sq[m] + eps) for each row in the tile
 
-  Pass 2: iterate over K × N in (BLOCK_K, BLOCK_N) tiles
-          → load x again, apply norm (x / rms × gamma) in registers
+  Pass 2: iterate over K x N in (BLOCK_K, BLOCK_N) tiles
+          → load x again, apply norm (x / rms x gamma) in registers
           → multiply by W tile and accumulate into the output
 
 Memory traffic (reference, two kernels):
-  Reads:  M×K (norm) + M×K (linear) + K×N (weight)  = 2×M×K + K×N
-  Writes: M×K (x_norm) + M×N (output)               = M×K + M×N
+  Reads:  MxK (norm) + MxK (linear) + KxN (weight)  = 2xMxK + KxN
+  Writes: MxK (x_norm) + MxN (output)               = MxK + MxN
 
 Memory traffic (fused kernel):
-  Reads:  M×K (pass1) + M×K (pass2) + K×N (weight)  = 2×M×K + K×N
-  Writes: M×N (output only)                           = M×N
+  Reads:  MxK (pass1) + MxK (pass2) + KxN (weight)  = 2xMxK + KxN
+  Writes: MxN (output only)                           = MxN
 
-Saving: eliminates 1 write + 1 read of the M×K intermediate = 2×M×K bytes.
-For M×K = 8192×512 × 2 bytes (bf16) = 8 MB saved per fused call.
+Saving: eliminates 1 write + 1 read of the MxK intermediate = 2xMxK bytes.
+For MxK = 8192x512 x 2 bytes (bf16) = 8 MB saved per fused call.
 
 Note on RMSNorm vs LayerNorm
 -----------------------------
@@ -68,11 +68,11 @@ References
 from __future__ import annotations
 
 import torch
-import torch.nn.functional as F
 
 try:
     import triton
     import triton.language as tl
+
     _TRITON_AVAILABLE = True
 except ImportError:
     _TRITON_AVAILABLE = False
@@ -82,12 +82,12 @@ except ImportError:
 
 
 def rms_norm_linear_reference(
-    x:     torch.Tensor,          # (M, K)  input
-    gamma: torch.Tensor,          # (K,)    RMSNorm elementwise scale
-    w:     torch.Tensor,          # (K, N)  linear weight (pre-transposed)
-    bias:  torch.Tensor | None,   # (N,)    optional bias
-    eps:   float = 1e-6,
-) -> torch.Tensor:                 # (M, N)
+    x: torch.Tensor,  # (M, K)  input
+    gamma: torch.Tensor,  # (K,)    RMSNorm elementwise scale
+    w: torch.Tensor,  # (K, N)  linear weight (pre-transposed)
+    bias: torch.Tensor | None,  # (N,)    optional bias
+    eps: float = 1e-6,
+) -> torch.Tensor:  # (M, N)
     """Reference: RMSNorm then linear, as two separate PyTorch ops.
 
     The Triton kernel must match this within rtol=1e-2 / atol=1e-2 (bfloat16)
@@ -95,7 +95,7 @@ def rms_norm_linear_reference(
     because floating-point reductions over K accumulate differently between
     PyTorch and Triton.
     """
-    # RMSNorm: x / rms(x) × gamma
+    # RMSNorm: x / rms(x) x gamma
     x_f32 = x.float()
     rms = torch.sqrt(x_f32.pow(2).mean(dim=-1, keepdim=True) + eps)
     x_norm = (x_f32 / rms) * gamma.float()
@@ -112,31 +112,36 @@ if _TRITON_AVAILABLE:
 
     @triton.autotune(
         configs=[
-            triton.Config({"BLOCK_M": 16, "BLOCK_N": 64,  "BLOCK_K": 64},  num_warps=4),
-            triton.Config({"BLOCK_M": 16, "BLOCK_N": 128, "BLOCK_K": 64},  num_warps=4),
-            triton.Config({"BLOCK_M": 32, "BLOCK_N": 64,  "BLOCK_K": 64},  num_warps=4),
-            triton.Config({"BLOCK_M": 32, "BLOCK_N": 128, "BLOCK_K": 64},  num_warps=8),
-            triton.Config({"BLOCK_M": 32, "BLOCK_N": 256, "BLOCK_K": 64},  num_warps=8),
-            triton.Config({"BLOCK_M": 64, "BLOCK_N": 64,  "BLOCK_K": 64},  num_warps=4),
-            triton.Config({"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 64},  num_warps=8),
-            triton.Config({"BLOCK_M": 16, "BLOCK_N": 64,  "BLOCK_K": 128}, num_warps=4),
+            triton.Config({"BLOCK_M": 16, "BLOCK_N": 64, "BLOCK_K": 64}, num_warps=4),
+            triton.Config({"BLOCK_M": 16, "BLOCK_N": 128, "BLOCK_K": 64}, num_warps=4),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 64, "BLOCK_K": 64}, num_warps=4),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 128, "BLOCK_K": 64}, num_warps=8),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 256, "BLOCK_K": 64}, num_warps=8),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 64}, num_warps=4),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 128, "BLOCK_K": 64}, num_warps=8),
+            triton.Config({"BLOCK_M": 16, "BLOCK_N": 64, "BLOCK_K": 128}, num_warps=4),
             triton.Config({"BLOCK_M": 32, "BLOCK_N": 128, "BLOCK_K": 128}, num_warps=8),
         ],
         key=["M", "K", "N"],
     )
     @triton.jit
     def _rms_norm_linear_fwd(
-        x_ptr,      # (M, K)
+        x_ptr,  # (M, K)
         gamma_ptr,  # (K,)
-        w_ptr,      # (K, N) — weight already in K-major layout (row = input feature)
-        bias_ptr,   # (N,) or null
-        out_ptr,    # (M, N)
+        w_ptr,  # (K, N) — weight already in K-major layout (row = input feature)
+        bias_ptr,  # (N,) or null
+        out_ptr,  # (M, N)
         # Runtime shapes
-        M, K, N,
+        M,
+        K,
+        N,
         # Strides
-        stride_xm, stride_xk,    # x strides
-        stride_wk, stride_wn,    # w strides
-        stride_om, stride_on,    # out strides
+        stride_xm,
+        stride_xk,  # x strides
+        stride_wk,
+        stride_wn,  # w strides
+        stride_om,
+        stride_on,  # out strides
         # Scalar params
         eps,
         # Flag: whether bias is present
@@ -149,7 +154,7 @@ if _TRITON_AVAILABLE:
         """Two-pass fused RMSNorm + linear.
 
         Pass 1: compute RMS for each row in the BLOCK_M tile (reduces over K).
-        Pass 2: apply norm × gamma inline during the matmul K-reduction.
+        Pass 2: apply norm x gamma inline during the matmul K-reduction.
 
         Both passes read x from HBM.  The normalised intermediate is NEVER
         written to HBM — it lives entirely in registers.
@@ -175,16 +180,16 @@ if _TRITON_AVAILABLE:
             k_mask = k_offs < K
 
             x_ptrs = x_ptr + m_offs[:, None] * stride_xm + k_offs[None, :] * stride_xk
-            x_tile = tl.load(x_ptrs,
-                             mask=m_mask[:, None] & k_mask[None, :],
-                             other=0.0)         # (BLOCK_M, BLOCK_K)
-            x_f32  = x_tile.to(tl.float32)
-            rms_sq += tl.sum(x_f32 * x_f32, axis=1)   # (BLOCK_M,) accumulate
+            x_tile = tl.load(
+                x_ptrs, mask=m_mask[:, None] & k_mask[None, :], other=0.0
+            )  # (BLOCK_M, BLOCK_K)
+            x_f32 = x_tile.to(tl.float32)
+            rms_sq += tl.sum(x_f32 * x_f32, axis=1)  # (BLOCK_M,) accumulate
 
-        # Compute per-row RMS  (divide by K, not BLOCK_K × n_chunks, to get the mean)
-        rms = tl.sqrt(rms_sq / K + eps)                # (BLOCK_M,)
+        # Compute per-row RMS  (divide by K, not BLOCK_K x n_chunks, to get the mean)
+        rms = tl.sqrt(rms_sq / K + eps)  # (BLOCK_M,)
 
-        # ── Pass 2: norm × gamma inline, then tiled matmul ───────────────────
+        # ── Pass 2: norm x gamma inline, then tiled matmul ───────────────────
         # Accumulator for output tile (BLOCK_M, BLOCK_N) in float32
         acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
@@ -195,22 +200,23 @@ if _TRITON_AVAILABLE:
 
             # Load x tile and apply RMSNorm
             x_ptrs = x_ptr + m_offs[:, None] * stride_xm + k_offs[None, :] * stride_xk
-            x_tile = tl.load(x_ptrs,
-                             mask=m_mask[:, None] & k_mask[None, :],
-                             other=0.0).to(tl.float32)   # (BLOCK_M, BLOCK_K)
+            x_tile = tl.load(x_ptrs, mask=m_mask[:, None] & k_mask[None, :], other=0.0).to(
+                tl.float32
+            )  # (BLOCK_M, BLOCK_K)
 
             # Load gamma for this K chunk
-            gamma_tile = tl.load(gamma_ptr + k_offs,
-                                 mask=k_mask, other=0.0).to(tl.float32)  # (BLOCK_K,)
+            gamma_tile = tl.load(gamma_ptr + k_offs, mask=k_mask, other=0.0).to(
+                tl.float32
+            )  # (BLOCK_K,)
 
             # Apply norm: divide by rms, scale by gamma
             x_norm = (x_tile / rms[:, None]) * gamma_tile[None, :]  # (BLOCK_M, BLOCK_K)
 
             # Load W tile: (BLOCK_K, BLOCK_N)
             w_ptrs = w_ptr + k_offs[:, None] * stride_wk + n_offs[None, :] * stride_wn
-            w_tile = tl.load(w_ptrs,
-                             mask=k_mask[:, None] & n_mask[None, :],
-                             other=0.0).to(tl.float32)   # (BLOCK_K, BLOCK_N)
+            w_tile = tl.load(w_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0).to(
+                tl.float32
+            )  # (BLOCK_K, BLOCK_N)
 
             # Matmul accumulation
             acc = tl.dot(x_norm, w_tile, acc)
@@ -222,20 +228,19 @@ if _TRITON_AVAILABLE:
 
         # Store output (cast back to input dtype)
         out_ptrs = out_ptr + m_offs[:, None] * stride_om + n_offs[None, :] * stride_on
-        tl.store(out_ptrs, acc.to(x_ptr.dtype.element_ty),
-                 mask=m_mask[:, None] & n_mask[None, :])
+        tl.store(out_ptrs, acc.to(x_ptr.dtype.element_ty), mask=m_mask[:, None] & n_mask[None, :])
 
 
 # ── Python dispatcher ─────────────────────────────────────────────────────────
 
 
 def rms_norm_linear(
-    x:     torch.Tensor,           # (M, K) or (B, L, K) — will be reshaped
-    gamma: torch.Tensor,           # (K,)
-    w:     torch.Tensor,           # (K, N)
-    bias:  torch.Tensor | None = None,  # (N,)
-    eps:   float = 1e-6,
-) -> torch.Tensor:                  # same leading dims as x, with K → N
+    x: torch.Tensor,  # (M, K) or (B, L, K) — will be reshaped
+    gamma: torch.Tensor,  # (K,)
+    w: torch.Tensor,  # (K, N)
+    bias: torch.Tensor | None = None,  # (N,)
+    eps: float = 1e-6,
+) -> torch.Tensor:  # same leading dims as x, with K → N
     """Fused RMSNorm + linear.  Requires CUDA + Triton; falls back to reference otherwise.
 
     Accepts arbitrary leading dimensions (e.g., (B, L, K)) by flattening them
@@ -270,19 +275,24 @@ def rms_norm_linear(
 
     out = torch.empty((M, N), dtype=x.dtype, device=device)
 
-    grid = lambda meta: (
-        triton.cdiv(M, meta["BLOCK_M"]),
-        triton.cdiv(N, meta["BLOCK_N"]),
-    )
+    def grid(meta: dict) -> tuple[int, int]:
+        return (triton.cdiv(M, meta["BLOCK_M"]), triton.cdiv(N, meta["BLOCK_N"]))
 
     _rms_norm_linear_fwd[grid](
-        x_2d, gamma, w,
+        x_2d,
+        gamma,
+        w,
         bias if bias is not None else x_2d,  # dummy pointer; HAS_BIAS guards the load
         out,
-        M, K, N,
-        x_2d.stride(0), x_2d.stride(1),
-        w.stride(0), w.stride(1),
-        out.stride(0), out.stride(1),
+        M,
+        K,
+        N,
+        x_2d.stride(0),
+        x_2d.stride(1),
+        w.stride(0),
+        w.stride(1),
+        out.stride(0),
+        out.stride(1),
         eps,
         HAS_BIAS=(bias is not None),
     )

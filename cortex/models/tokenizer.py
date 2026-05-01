@@ -42,8 +42,8 @@ class SpikeTokenizer(nn.Module):
         self.config = config
 
         self.neuron_emb = nn.Embedding(config.max_neurons, config.hidden_dim)
-        self.time_emb   = nn.Embedding(config.max_time_bins, config.hidden_dim)
-        self.value_emb  = nn.Embedding(config.spike_value_buckets, config.hidden_dim)
+        self.time_emb = nn.Embedding(config.max_time_bins, config.hidden_dim)
+        self.value_emb = nn.Embedding(config.spike_value_buckets, config.hidden_dim)
 
         self._init_weights()
 
@@ -54,8 +54,8 @@ class SpikeTokenizer(nn.Module):
     def forward(
         self,
         neuron_ids: torch.Tensor,
-        time_bins:  torch.Tensor,
-        values:     torch.Tensor,
+        time_bins: torch.Tensor,
+        values: torch.Tensor,
     ) -> torch.Tensor:
         """Embed a batch of spike events.
 
@@ -75,6 +75,7 @@ class SpikeTokenizer(nn.Module):
 
         if self.config.use_kernels and torch.cuda.is_available():
             from cortex.kernels.tokenizer import fused_tokenizer
+
             return fused_tokenizer(
                 self.neuron_emb.weight,
                 self.time_emb.weight,
@@ -84,8 +85,4 @@ class SpikeTokenizer(nn.Module):
                 values,
             )
 
-        return (
-            self.neuron_emb(neuron_ids)
-            + self.time_emb(time_bins)
-            + self.value_emb(values)
-        )
+        return self.neuron_emb(neuron_ids) + self.time_emb(time_bins) + self.value_emb(values)

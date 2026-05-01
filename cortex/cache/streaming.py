@@ -66,11 +66,11 @@ log = get_logger(__name__)
 class PageMeta:
     """Metadata for one cache page."""
 
-    page_id:         int
-    session_id:      str
-    bin_start:       int      # first time-bin index this page covers
-    n_events:        int      # number of valid events written into this page
-    last_used_at:    float    # monotonic timestamp, for LRU
+    page_id: int
+    session_id: str
+    bin_start: int  # first time-bin index this page covers
+    n_events: int  # number of valid events written into this page
+    last_used_at: float  # monotonic timestamp, for LRU
 
 
 # ── Cache implementation ──────────────────────────────────────────────────────
@@ -102,9 +102,7 @@ class StreamingKVCache:
         self.device = torch.device(device)
 
         # Pre-allocated tensor pool: (num_pages, page_size, hidden_dim)
-        self._pool = torch.zeros(
-            num_pages, page_size, hidden_dim, dtype=dtype, device=self.device
-        )
+        self._pool = torch.zeros(num_pages, page_size, hidden_dim, dtype=dtype, device=self.device)
 
         # Page table: (session_id, bin_start) → page_id
         self._table: dict[tuple[str, int], int] = {}
@@ -119,7 +117,7 @@ class StreamingKVCache:
         self._lru: OrderedDict[int, None] = OrderedDict()
 
         # Rolling hit/miss counters for metrics
-        self._hits   = 0
+        self._hits = 0
         self._misses = 0
 
         log.info(
@@ -183,8 +181,8 @@ class StreamingKVCache:
             )
             self._lru[page_id] = None
 
-        self._pool[page_id, :n, :] = embeddings[:n].detach().to(
-            dtype=self._pool.dtype, device=self.device
+        self._pool[page_id, :n, :] = (
+            embeddings[:n].detach().to(dtype=self._pool.dtype, device=self.device)
         )
         self._meta[page_id].n_events = n
         self._meta[page_id].last_used_at = time.monotonic()
@@ -223,9 +221,7 @@ class StreamingKVCache:
         self._free_page(lru_id)
 
         if not self._free:
-            raise RuntimeError(
-                "KV cache pool exhausted — this should never happen after eviction"
-            )
+            raise RuntimeError("KV cache pool exhausted — this should never happen after eviction")
         return self._free.pop()
 
     def _free_page(self, page_id: int) -> None:

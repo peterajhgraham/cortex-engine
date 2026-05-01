@@ -34,17 +34,17 @@ from cortex.kernels.sparse_xattn import (
     sparse_cross_attention_reference,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _make_qkv(B: int, H: int, L: int, E: int, Dh: int,
-               device: str = "cpu", dtype: torch.dtype = torch.float32):
+def _make_qkv(
+    B: int, H: int, L: int, E: int, Dh: int, device: str = "cpu", dtype: torch.dtype = torch.float32
+):
     torch.manual_seed(123)
-    scale = Dh ** -0.5
-    q = torch.randn(B, H, L,  Dh, device=device, dtype=dtype)
-    k = torch.randn(B, H, E,  Dh, device=device, dtype=dtype)
-    v = torch.randn(B, H, E,  Dh, device=device, dtype=dtype)
+    scale = Dh**-0.5
+    q = torch.randn(B, H, L, Dh, device=device, dtype=dtype)
+    k = torch.randn(B, H, E, Dh, device=device, dtype=dtype)
+    v = torch.randn(B, H, E, Dh, device=device, dtype=dtype)
     return q, k, v, scale
 
 
@@ -76,21 +76,23 @@ class TestReference:
         q, k, v, scale = _make_qkv(B, H, L, E, Dh, dtype=torch.float32)
 
         mask = _dense_mask(L, E, BLOCK_L=32, BLOCK_E=64)
-        ref_sparse  = sparse_cross_attention_reference(q, k, v, mask, BLOCK_L=32, BLOCK_E=64, scale=scale)
-        ref_sdpa    = torch.nn.functional.scaled_dot_product_attention(q, k, v, scale=scale)
+        ref_sparse = sparse_cross_attention_reference(
+            q, k, v, mask, BLOCK_L=32, BLOCK_E=64, scale=scale
+        )
+        ref_sdpa = torch.nn.functional.scaled_dot_product_attention(q, k, v, scale=scale)
 
         torch.testing.assert_close(ref_sparse, ref_sdpa, rtol=1e-5, atol=1e-5)
 
     def test_partial_mask_zeroes_excluded_events(self):
         """Events in a masked-out tile must not influence the output."""
         B, H, L, E, Dh = 1, 1, 32, 64, 8
-        q, k, v, scale = _make_qkv(B, H, L, E, Dh, dtype=torch.float32)
+        q, k, v, _scale = _make_qkv(B, H, L, E, Dh, dtype=torch.float32)
 
         # Mask: first query tile attends to first event tile only
-        mask_full    = torch.ones(1, 2, dtype=torch.bool)
-        mask_sparse  = torch.tensor([[True, False]], dtype=torch.bool)  # (1, 2)
+        mask_full = torch.ones(1, 2, dtype=torch.bool)
+        mask_sparse = torch.tensor([[True, False]], dtype=torch.bool)  # (1, 2)
 
-        out_full   = sparse_cross_attention_reference(q, k, v, mask_full,   BLOCK_L=32, BLOCK_E=32)
+        out_full = sparse_cross_attention_reference(q, k, v, mask_full, BLOCK_L=32, BLOCK_E=32)
         out_sparse = sparse_cross_attention_reference(q, k, v, mask_sparse, BLOCK_L=32, BLOCK_E=32)
 
         # Outputs differ because second half of events is excluded in sparse version
@@ -126,9 +128,7 @@ class TestTemporalBlockMask:
         """With window_bins = T (full range), all tiles must be True."""
         E, L, T = 64, 32, 120
         event_times = torch.randint(0, T, (E,))
-        mask = build_temporal_block_mask(
-            event_times, L, T, window_bins=T, BLOCK_L=32, BLOCK_E=32
-        )
+        mask = build_temporal_block_mask(event_times, L, T, window_bins=T, BLOCK_L=32, BLOCK_E=32)
         assert mask.all(), "With full-range window, all tiles should be active"
 
     def test_zero_window_produces_some_false(self):
@@ -136,9 +136,7 @@ class TestTemporalBlockMask:
         E, L, T = 128, 64, 120
         # Place all events at t=0 (start of recording)
         event_times = torch.zeros(E, dtype=torch.long)
-        mask = build_temporal_block_mask(
-            event_times, L, T, window_bins=0, BLOCK_L=32, BLOCK_E=32
-        )
+        mask = build_temporal_block_mask(event_times, L, T, window_bins=0, BLOCK_L=32, BLOCK_E=32)
         # Latents near the end of L (which map to large time) should be masked
         assert not mask.all(), "Zero window should produce at least some masked tiles"
 
@@ -163,10 +161,10 @@ class TestTemporalBlockMask:
 @pytest.mark.parametrize(
     "B,H,L,E,Dh",
     [
-        (1, 1,  32,  64, 16),    # minimal shape
-        (2, 4,  64, 128, 32),    # small multi-head
-        (1, 8, 128, 256, 64),    # Cortex-S-like: L=128, E=256
-        (2, 8, 256, 512, 64),    # Cortex-S production: L=256, E=512, Dh=64
+        (1, 1, 32, 64, 16),  # minimal shape
+        (2, 4, 64, 128, 32),  # small multi-head
+        (1, 8, 128, 256, 64),  # Cortex-S-like: L=128, E=256
+        (2, 8, 256, 512, 64),  # Cortex-S production: L=256, E=512, Dh=64
     ],
 )
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
@@ -179,7 +177,9 @@ def test_triton_dense_matches_reference(B, H, L, E, Dh, dtype):
     q, k, v, scale = _make_qkv(B, H, L, E, Dh, device="cuda", dtype=dtype)
     mask = _dense_mask(L, E, BLOCK_L, BLOCK_E)
 
-    ref = sparse_cross_attention_reference(q, k, v, mask, BLOCK_L=BLOCK_L, BLOCK_E=BLOCK_E, scale=scale)
+    ref = sparse_cross_attention_reference(
+        q, k, v, mask, BLOCK_L=BLOCK_L, BLOCK_E=BLOCK_E, scale=scale
+    )
     out = sparse_cross_attention(q, k, v, mask, BLOCK_L=BLOCK_L, BLOCK_E=BLOCK_E, scale=scale)
 
     assert out.shape == ref.shape
@@ -207,7 +207,9 @@ def test_triton_sparse_matches_reference():
         for j in range(n_k):
             mask[i, j] = (i + j) % 2 == 0
 
-    ref = sparse_cross_attention_reference(q, k, v, mask, BLOCK_L=BLOCK_L, BLOCK_E=BLOCK_E, scale=scale)
+    ref = sparse_cross_attention_reference(
+        q, k, v, mask, BLOCK_L=BLOCK_L, BLOCK_E=BLOCK_E, scale=scale
+    )
     out = sparse_cross_attention(q, k, v, mask, BLOCK_L=BLOCK_L, BLOCK_E=BLOCK_E, scale=scale)
 
     torch.testing.assert_close(out, ref, rtol=1e-4, atol=1e-4)

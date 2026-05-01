@@ -23,7 +23,6 @@ from cortex.training.train import (
     run_training_loop,
 )
 
-
 # ── LR schedule ────────────────────────────────────────────────────────────────
 
 
@@ -90,7 +89,7 @@ def test_compute_loss_returns_finite_loss_and_components() -> None:
     assert torch.isfinite(loss)
     assert "behavior_loss" in components
     # Without targets, masked loss should not appear regardless of weight.
-    loss2, components2 = compute_loss(model, batch, behavior_weight=1.0, masked_spike_weight=0.1)
+    _, components2 = compute_loss(model, batch, behavior_weight=1.0, masked_spike_weight=0.1)
     assert "masked_spike_loss" not in components2
 
 
@@ -201,9 +200,16 @@ def test_training_loop_loss_decreases_on_overfit(tmp_path: Path) -> None:
 
     # Reduce the model further so 80 steps on CPU is fast.
     tiny = CortexConfig(
-        hidden_dim=64, num_layers=2, num_heads=2, head_dim=32,
-        num_latents=16, latent_dim=64, cross_attn_heads=2,
-        max_neurons=256, max_time_bins=512, behavior_dim=2,
+        hidden_dim=64,
+        num_layers=2,
+        num_heads=2,
+        head_dim=32,
+        num_latents=16,
+        latent_dim=64,
+        cross_attn_heads=2,
+        max_neurons=256,
+        max_time_bins=512,
+        behavior_dim=2,
     )
     model = CortexModel(tiny)
     optimizer = build_optimizer(
@@ -216,9 +222,7 @@ def test_training_loop_loss_decreases_on_overfit(tmp_path: Path) -> None:
 
     # Snapshot loss at step 0 vs after training.
     first_batch = next(iter(loader))
-    initial_loss, _ = compute_loss(
-        model, first_batch, behavior_weight=1.0, masked_spike_weight=0.0
-    )
+    initial_loss, _ = compute_loss(model, first_batch, behavior_weight=1.0, masked_spike_weight=0.0)
 
     state = TrainState(step=0, epoch=0, best_val_metric=float("-inf"))
     run_training_loop(
@@ -234,9 +238,7 @@ def test_training_loop_loss_decreases_on_overfit(tmp_path: Path) -> None:
         wandb_run=None,
     )
 
-    final_loss, _ = compute_loss(
-        model, first_batch, behavior_weight=1.0, masked_spike_weight=0.0
-    )
+    final_loss, _ = compute_loss(model, first_batch, behavior_weight=1.0, masked_spike_weight=0.0)
     assert final_loss.item() < initial_loss.item()
 
 

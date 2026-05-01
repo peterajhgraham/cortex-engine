@@ -36,7 +36,9 @@ class CortexConfig(BaseModel):
     spike_value_buckets: int = Field(8, gt=0, description="Quantization buckets for spike count")
 
     # Decoder heads
-    behavior_dim: int = Field(..., gt=0, description="Output dim of behavior decoder (e.g., 2 for x/y velocity)")
+    behavior_dim: int = Field(
+        ..., gt=0, description="Output dim of behavior decoder (e.g., 2 for x/y velocity)"
+    )
     use_masked_spike_head: bool = True
 
     # Numeric
@@ -48,7 +50,9 @@ class CortexConfig(BaseModel):
     @model_validator(mode="after")
     def _check_head_consistency(self) -> CortexConfig:
         if self.hidden_dim % self.num_heads != 0:
-            raise ValueError(f"hidden_dim ({self.hidden_dim}) must be divisible by num_heads ({self.num_heads})")
+            raise ValueError(
+                f"hidden_dim ({self.hidden_dim}) must be divisible by num_heads ({self.num_heads})"
+            )
         if self.head_dim * self.num_heads != self.hidden_dim:
             raise ValueError(
                 f"head_dim ({self.head_dim}) * num_heads ({self.num_heads}) "

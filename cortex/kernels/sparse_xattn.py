@@ -2,15 +2,15 @@
 
 Problem
 -------
-The Perceiver cross-attention computes Q (latents) × K^T (spike events) and then
+The Perceiver cross-attention computes Q (latents) x K^T (spike events) and then
 weights the V (spike events).  Shape: Q = (B, H, L, Dh), K/V = (B, H, E, Dh).
-Naive cost: O(L × E) per head.
+Naive cost: O(L x E) per head.
 
 Spike events are temporally sparse: in MC_Maze, a 600 ms window has ~685 events
 from 137 neurons, but the events cluster around movement onset.  During rest,
 most of the 120 time-bins are silent.  If we can skip attention computations for
 event tiles that are far from any query's "receptive window," we save a fraction
-of the L × E work proportional to spike sparsity.
+of the L x E work proportional to spike sparsity.
 
 Block-sparsity approach
 -----------------------
@@ -19,7 +19,7 @@ Block-sparsity approach
    attend to event tile ej.  False means skip — the events in that tile contribute
    zero attention weight.
 3. In the kernel, the outer loop over event tiles tests the mask and skips False
-   tiles, saving compute and HBM reads proportional to 1 − density.
+   tiles, saving compute and HBM reads proportional to 1 - density.
 
 The mask is computed externally by `build_temporal_block_mask`, which compares
 the time-bin range of each event tile against a ±window around each latent's
@@ -40,11 +40,11 @@ running max/sum statistics so the softmax denominator never needs to be stored:
         o = 0     (running weighted output, *un-normalised* by l)
 
         For each non-masked event tile ej:
-            S = qi @ kj^T × scale          # (BLOCK_L, BLOCK_E) scores
+            S = qi @ kj^T x scale          # (BLOCK_L, BLOCK_E) scores
             m_new = max(m, rowmax(S))
-            p     = exp(S − m_new)         # re-centred probabilities (BLOCK_L, BLOCK_E)
-            l_new = exp(m − m_new) × l + rowsum(p)
-            o     = exp(m − m_new) × o + p @ vj
+            p     = exp(S - m_new)         # re-centred probabilities (BLOCK_L, BLOCK_E)
+            l_new = exp(m - m_new) x l + rowsum(p)
+            o     = exp(m - m_new) x o + p @ vj
             m, l  = m_new, l_new
 
         o /= l                             # final normalisation
@@ -84,6 +84,7 @@ import torch.nn.functional as F
 try:
     import triton
     import triton.language as tl
+
     _TRITON_AVAILABLE = True
 except ImportError:
     _TRITON_AVAILABLE = False
@@ -93,23 +94,23 @@ except ImportError:
 
 
 def sparse_cross_attention_reference(
-    q: torch.Tensor,          # (B, H, L, Dh)
-    k: torch.Tensor,          # (B, H, E, Dh)
-    v: torch.Tensor,          # (B, H, E, Dh)
+    q: torch.Tensor,  # (B, H, L, Dh)
+    k: torch.Tensor,  # (B, H, E, Dh)
+    v: torch.Tensor,  # (B, H, E, Dh)
     block_mask: torch.Tensor | None = None,  # (n_q_tiles, n_k_tiles) bool
     BLOCK_L: int = 64,
     BLOCK_E: int = 64,
     scale: float | None = None,
-) -> torch.Tensor:             # (B, H, L, Dh)
+) -> torch.Tensor:  # (B, H, L, Dh)
     """Reference: dense SDPA with optional tile-level masking.
 
     When block_mask is provided, event tiles that are False get -inf in the
     attention score before softmax — equivalent to excluding those events.
     Used as the correctness target for the Triton kernel.
     """
-    B, H, L, Dh = q.shape
+    _, _, L, Dh = q.shape
     _B, _H, E, _Dh = k.shape
-    s = scale if scale is not None else Dh ** -0.5
+    s = scale if scale is not None else Dh**-0.5
 
     if block_mask is None:
         return F.scaled_dot_product_attention(q, k, v, scale=s)
@@ -117,9 +118,10 @@ def sparse_cross_attention_reference(
     # Expand block mask to per-element attention mask: (L, E)
     n_q = math.ceil(L / BLOCK_L)
     n_k = math.ceil(E / BLOCK_E)
-    assert block_mask.shape == (n_q, n_k), (
-        f"block_mask shape {block_mask.shape} != expected ({n_q}, {n_k})"
-    )
+    assert block_mask.shape == (
+        n_q,
+        n_k,
+    ), f"block_mask shape {block_mask.shape} != expected ({n_q}, {n_k})"
 
     # Build dense (L, E) bool mask from block mask
     attn_mask = torch.zeros(L, E, dtype=torch.bool, device=q.device)
@@ -149,15 +151,15 @@ def sparse_cross_attention_reference(
 
 def build_temporal_block_mask(
     event_times: torch.Tensor,  # (E,) int64 — time-bin for each event
-    n_latents: int,             # L — number of latent queries
-    max_time_bins: int,         # T — total time axis length
-    window_bins: int = 30,      # half-window: latent i attends to bins ±window around its centre
+    n_latents: int,  # L — number of latent queries
+    max_time_bins: int,  # T — total time axis length
+    window_bins: int = 30,  # half-window: latent i attends to bins ±window around its centre
     BLOCK_L: int = 64,
     BLOCK_E: int = 64,
-) -> torch.Tensor:              # (n_q_tiles, n_k_tiles) bool, on CPU
+) -> torch.Tensor:  # (n_q_tiles, n_k_tiles) bool, on CPU
     """Build a coarse block-level temporal attention mask.
 
-    Latent i is mapped to a nominal time centre: t_i = i / L × T.
+    Latent i is mapped to a nominal time centre: t_i = i / L x T.
     Event tile j is included for latent tile qi if any event in tile j has a
     time-bin within ±window_bins of any latent centre in tile qi.
 
@@ -205,17 +207,39 @@ if _TRITON_AVAILABLE:
     @triton.jit
     def _sparse_cross_attn_fwd(
         # Q: (B, H, L, Dh) — row major, stride_qb/qh/ql/qd
-        q_ptr, stride_qb, stride_qh, stride_ql, stride_qd,
+        q_ptr,
+        stride_qb,
+        stride_qh,
+        stride_ql,
+        stride_qd,
         # K: (B, H, E, Dh)
-        k_ptr, stride_kb, stride_kh, stride_ke, stride_kd,
+        k_ptr,
+        stride_kb,
+        stride_kh,
+        stride_ke,
+        stride_kd,
         # V: (B, H, E, Dh)
-        v_ptr, stride_vb, stride_vh, stride_ve, stride_vd,
+        v_ptr,
+        stride_vb,
+        stride_vh,
+        stride_ve,
+        stride_vd,
         # Block mask: (n_q_tiles, n_k_tiles) bool, row-major, stride_mb/stride_mk
-        mask_ptr, stride_mn, stride_mk,
+        mask_ptr,
+        stride_mn,
+        stride_mk,
         # Output: (B, H, L, Dh)
-        out_ptr, stride_ob, stride_oh, stride_ol, stride_od,
+        out_ptr,
+        stride_ob,
+        stride_oh,
+        stride_ol,
+        stride_od,
         # Shapes
-        B, H, L, E, Dh,
+        B,
+        H,
+        L,
+        E,
+        Dh,
         # Scale factor (1 / sqrt(Dh))
         scale,
         # Number of event tiles
@@ -227,43 +251,35 @@ if _TRITON_AVAILABLE:
     ) -> None:
         """FA2-style cross-attention, skipping masked event tiles.
 
-        Grid: (ceil(L/BLOCK_L), B × H)
+        Grid: (ceil(L/BLOCK_L), B x H)
         Each program handles one query tile for one (batch, head) pair.
         """
-        pid_q  = tl.program_id(0)   # which query tile (along L)
-        pid_bh = tl.program_id(1)   # flattened (batch, head) index
+        pid_q = tl.program_id(0)  # which query tile (along L)
+        pid_bh = tl.program_id(1)  # flattened (batch, head) index
 
         batch_idx = pid_bh // H
-        head_idx  = pid_bh % H
+        head_idx = pid_bh % H
 
         # Query tile: absolute latent indices
         l_start = pid_q * BLOCK_L
-        l_offs  = l_start + tl.arange(0, BLOCK_L)   # (BLOCK_L,)
-        l_mask  = l_offs < L
+        l_offs = l_start + tl.arange(0, BLOCK_L)  # (BLOCK_L,)
+        l_mask = l_offs < L
 
         # Precompute base pointers for this (batch, head) slice
-        q_base = (q_ptr
-                  + batch_idx * stride_qb
-                  + head_idx  * stride_qh)
-        k_base = (k_ptr
-                  + batch_idx * stride_kb
-                  + head_idx  * stride_kh)
-        v_base = (v_ptr
-                  + batch_idx * stride_vb
-                  + head_idx  * stride_vh)
-        o_base = (out_ptr
-                  + batch_idx * stride_ob
-                  + head_idx  * stride_oh)
+        q_base = q_ptr + batch_idx * stride_qb + head_idx * stride_qh
+        k_base = k_ptr + batch_idx * stride_kb + head_idx * stride_kh
+        v_base = v_ptr + batch_idx * stride_vb + head_idx * stride_vh
+        o_base = out_ptr + batch_idx * stride_ob + head_idx * stride_oh
 
         # Load query tile: (BLOCK_L, Dh)
         # We load in BLOCK_Dh chunks to support Dh > 128 if needed
-        dh_offs = tl.arange(0, BLOCK_Dh)    # (BLOCK_Dh,)
+        dh_offs = tl.arange(0, BLOCK_Dh)  # (BLOCK_Dh,)
         dh_mask = dh_offs < Dh
 
         q_ptrs = q_base + l_offs[:, None] * stride_ql + dh_offs[None, :] * stride_qd
-        q_tile = tl.load(q_ptrs,
-                         mask=l_mask[:, None] & dh_mask[None, :],
-                         other=0.0)  # (BLOCK_L, BLOCK_Dh)
+        q_tile = tl.load(
+            q_ptrs, mask=l_mask[:, None] & dh_mask[None, :], other=0.0
+        )  # (BLOCK_L, BLOCK_Dh)
 
         # FA2 running statistics: shape (BLOCK_L,)
         m_i = tl.full((BLOCK_L,), float("-inf"), dtype=tl.float32)
@@ -278,14 +294,12 @@ if _TRITON_AVAILABLE:
             should_compute = tl.load(mask_ptr + pid_q * stride_mn + kj * stride_mk)
             if should_compute:
                 e_start = kj * BLOCK_E
-                e_offs  = e_start + tl.arange(0, BLOCK_E)  # (BLOCK_E,)
-                e_mask  = e_offs < E
+                e_offs = e_start + tl.arange(0, BLOCK_E)  # (BLOCK_E,)
+                e_mask = e_offs < E
 
                 # Load K tile: (BLOCK_E, BLOCK_Dh)
                 k_ptrs = k_base + e_offs[:, None] * stride_ke + dh_offs[None, :] * stride_kd
-                k_tile = tl.load(k_ptrs,
-                                 mask=e_mask[:, None] & dh_mask[None, :],
-                                 other=0.0)
+                k_tile = tl.load(k_ptrs, mask=e_mask[:, None] & dh_mask[None, :], other=0.0)
 
                 # Attention scores: (BLOCK_L, BLOCK_E)
                 scores = tl.dot(q_tile, tl.trans(k_tile)) * scale
@@ -294,16 +308,14 @@ if _TRITON_AVAILABLE:
                 scores = tl.where(e_mask[None, :], scores, float("-inf"))
 
                 # FA2 online softmax update
-                m_ij = tl.max(scores, axis=1)              # (BLOCK_L,) row-wise max
-                m_new = tl.maximum(m_i, m_ij)              # updated running max
-                alpha = tl.exp(m_i - m_new)                # rescale factor for old stats
-                p = tl.exp(scores - m_new[:, None])        # (BLOCK_L, BLOCK_E) unnormalised probs
+                m_ij = tl.max(scores, axis=1)  # (BLOCK_L,) row-wise max
+                m_new = tl.maximum(m_i, m_ij)  # updated running max
+                alpha = tl.exp(m_i - m_new)  # rescale factor for old stats
+                p = tl.exp(scores - m_new[:, None])  # (BLOCK_L, BLOCK_E) unnormalised probs
 
                 # Load V tile: (BLOCK_E, BLOCK_Dh)
                 v_ptrs = v_base + e_offs[:, None] * stride_ve + dh_offs[None, :] * stride_vd
-                v_tile = tl.load(v_ptrs,
-                                 mask=e_mask[:, None] & dh_mask[None, :],
-                                 other=0.0)
+                v_tile = tl.load(v_ptrs, mask=e_mask[:, None] & dh_mask[None, :], other=0.0)
 
                 # Update running output and normaliser
                 o_i = alpha[:, None] * o_i + tl.dot(p.to(v_tile.dtype), v_tile).to(tl.float32)
@@ -317,22 +329,23 @@ if _TRITON_AVAILABLE:
 
         # Store output tile
         o_ptrs = o_base + l_offs[:, None] * stride_ol + dh_offs[None, :] * stride_od
-        tl.store(o_ptrs, o_final.to(q_ptr.dtype.element_ty),
-                 mask=l_mask[:, None] & dh_mask[None, :])
+        tl.store(
+            o_ptrs, o_final.to(q_ptr.dtype.element_ty), mask=l_mask[:, None] & dh_mask[None, :]
+        )
 
 
 # ── Python dispatcher ─────────────────────────────────────────────────────────
 
 
 def sparse_cross_attention(
-    q: torch.Tensor,          # (B, H, L, Dh)
-    k: torch.Tensor,          # (B, H, E, Dh)
-    v: torch.Tensor,          # (B, H, E, Dh)
+    q: torch.Tensor,  # (B, H, L, Dh)
+    k: torch.Tensor,  # (B, H, E, Dh)
+    v: torch.Tensor,  # (B, H, E, Dh)
     block_mask: torch.Tensor | None = None,  # (n_q_tiles, n_k_tiles) bool
     BLOCK_L: int = 64,
     BLOCK_E: int = 64,
     scale: float | None = None,
-) -> torch.Tensor:             # (B, H, L, Dh)
+) -> torch.Tensor:  # (B, H, L, Dh)
     """Block-sparse cross-attention.  Requires CUDA + Triton.
 
     Falls back to the dense PyTorch reference on non-CUDA devices or if Triton
@@ -356,7 +369,7 @@ def sparse_cross_attention(
 
     B, H, L, Dh = q.shape
     _B, _H, E, _Dh = k.shape
-    s = scale if scale is not None else Dh ** -0.5
+    s = scale if scale is not None else Dh**-0.5
 
     if block_mask is None:
         # Dense: all tiles are active — standard SDPA is faster here
@@ -365,9 +378,10 @@ def sparse_cross_attention(
     n_q_tiles = math.ceil(L / BLOCK_L)
     n_k_tiles = math.ceil(E / BLOCK_E)
 
-    assert block_mask.shape == (n_q_tiles, n_k_tiles), (
-        f"block_mask shape {block_mask.shape} != expected ({n_q_tiles}, {n_k_tiles})"
-    )
+    assert block_mask.shape == (
+        n_q_tiles,
+        n_k_tiles,
+    ), f"block_mask shape {block_mask.shape} != expected ({n_q_tiles}, {n_k_tiles})"
 
     # Ensure inputs are contiguous
     q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
@@ -383,14 +397,38 @@ def sparse_cross_attention(
     grid = (n_q_tiles, B * H)
 
     _sparse_cross_attn_fwd[grid](
-        q, q.stride(0), q.stride(1), q.stride(2), q.stride(3),
-        k, k.stride(0), k.stride(1), k.stride(2), k.stride(3),
-        v, v.stride(0), v.stride(1), v.stride(2), v.stride(3),
-        block_mask_dev, block_mask_dev.stride(0), block_mask_dev.stride(1),
-        out, out.stride(0), out.stride(1), out.stride(2), out.stride(3),
-        B, H, L, E, Dh,
+        q,
+        q.stride(0),
+        q.stride(1),
+        q.stride(2),
+        q.stride(3),
+        k,
+        k.stride(0),
+        k.stride(1),
+        k.stride(2),
+        k.stride(3),
+        v,
+        v.stride(0),
+        v.stride(1),
+        v.stride(2),
+        v.stride(3),
+        block_mask_dev,
+        block_mask_dev.stride(0),
+        block_mask_dev.stride(1),
+        out,
+        out.stride(0),
+        out.stride(1),
+        out.stride(2),
+        out.stride(3),
+        B,
+        H,
+        L,
+        E,
+        Dh,
         s,
         n_k_tiles,
-        BLOCK_L=BLOCK_L, BLOCK_E=BLOCK_E, BLOCK_Dh=BLOCK_Dh,
+        BLOCK_L=BLOCK_L,
+        BLOCK_E=BLOCK_E,
+        BLOCK_Dh=BLOCK_Dh,
     )
     return out

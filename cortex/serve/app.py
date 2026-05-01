@@ -30,11 +30,12 @@ Configuration
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import torch
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -43,7 +44,13 @@ from prometheus_client import make_asgi_app
 from cortex.models.config import CORTEX_S
 from cortex.serve.metrics import ERROR_COUNTER, QUEUE_DEPTH, REQUEST_COUNTER, REQUEST_LATENCY
 from cortex.serve.scheduler import QueueFullError, Scheduler
-from cortex.serve.schemas import DecodeRequest, DecodeResponse, HealthResponse, StreamFrame, StreamResponse
+from cortex.serve.schemas import (
+    DecodeRequest,
+    DecodeResponse,
+    HealthResponse,
+    StreamFrame,
+    StreamResponse,
+)
 from cortex.serve.tracing import configure_tracing, get_tracer, instrument_fastapi
 from cortex.serve.worker import InferenceWorker, _detect_device, load_model
 from cortex.utils.logging import configure_logging, get_logger
@@ -68,10 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # ── Device ───────────────────────────────────────────────────────────────
     device_str = _env("DEVICE", "auto")
-    if device_str == "auto":
-        device = _detect_device()
-    else:
-        device = torch.device(device_str)
+    device = _detect_device() if device_str == "auto" else torch.device(device_str)
 
     # ── Model ─────────────────────────────────────────────────────────────────
     checkpoint = _env("CHECKPOINT", "") or None
@@ -98,9 +102,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler_task = asyncio.create_task(scheduler.run())
 
     # Attach to app state so handlers can reach them
-    app.state.worker    = worker
+    app.state.worker = worker
     app.state.scheduler = scheduler
-    app.state.ready     = True
+    app.state.ready = True
 
     log.info(
         "server_ready",
@@ -116,10 +120,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.ready = False
     await scheduler.stop()
     scheduler_task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await scheduler_task
-    except asyncio.CancelledError:
-        pass
     worker.shutdown()
 
 
@@ -177,23 +179,25 @@ async def decode(req: DecodeRequest, request: Request) -> DecodeResponse:
     deadline_ms = float(req.deadline_ms) if req.deadline_ms is not None else None
 
     try:
-        with REQUEST_LATENCY.labels(endpoint="decode").time():
-            with _tracer.start_as_current_span("decode.schedule") as span:
-                span.set_attribute("request_id", req.request_id)
-                span.set_attribute("n_events", len(req.events))
-                span.set_attribute("deadline_ms", deadline_ms or -1)
-                result = await scheduler.submit(
-                    payload=payload,
-                    deadline_ms=deadline_ms,
-                    request_id=req.request_id,
-                )
+        with (
+            REQUEST_LATENCY.labels(endpoint="decode").time(),
+            _tracer.start_as_current_span("decode.schedule") as span,
+        ):
+            span.set_attribute("request_id", req.request_id)
+            span.set_attribute("n_events", len(req.events))
+            span.set_attribute("deadline_ms", deadline_ms or -1)
+            result = await scheduler.submit(
+                payload=payload,
+                deadline_ms=deadline_ms,
+                request_id=req.request_id,
+            )
     except QueueFullError as exc:
         ERROR_COUNTER.labels(error_type="queue_full").inc()
-        raise HTTPException(status_code=429, detail=str(exc))
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except Exception as exc:
         ERROR_COUNTER.labels(error_type="inference_error").inc()
         log.error("decode_error", request_id=req.request_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="inference failed")
+        raise HTTPException(status_code=500, detail="inference failed") from exc
 
     total_ms = time.perf_counter() * 1000 - arrival_ms
     inference_ms = result.get("inference_ms", 0.0)

@@ -133,7 +133,7 @@ def _pack_events(
     Profiling note (2026-04-30): the original implementation had a Python loop
     calling counts[b].item() once per batch element, producing batch_size
     CPU↔GPU synchronization stalls. Replaced with cumsum — zero .item() calls,
-    ~10× faster on MPS at batch=32, scales correctly for continuous batching.
+    ~10x faster on MPS at batch=32, scales correctly for continuous batching.
     """
     batch_size = int(batch_indices.max().item()) + 1 if batch_indices.numel() > 0 else 1
     counts = torch.bincount(batch_indices, minlength=batch_size)
@@ -150,10 +150,12 @@ def _pack_events(
 
     # Vectorized: cumsum replaces the former Python loop (which called .item() per
     # batch element, stalling the MPS/CUDA queue batch_size times per forward pass).
-    cum = torch.cat([
-        torch.zeros(1, dtype=torch.long, device=device),
-        counts[:-1].cumsum(0),
-    ])
+    cum = torch.cat(
+        [
+            torch.zeros(1, dtype=torch.long, device=device),
+            counts[:-1].cumsum(0),
+        ]
+    )
     pos_within = torch.arange(sorted_batch.numel(), device=device) - cum[sorted_batch]
 
     out[sorted_batch, pos_within] = sorted_tokens
