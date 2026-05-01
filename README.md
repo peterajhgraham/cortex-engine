@@ -166,6 +166,21 @@ All three kernels: PyTorch reference implementation, Triton kernel, correctness 
 - **`convert_model()`:** Walks the model graph, replaces `nn.Linear` with `QuantizedLinear` in-place. Preserves bias, LayerNorm, and embedding layers in original precision.
 - **Calibration script** (`scripts/calibrate_model.py`): Loads Cortex-S, runs 50 calibration batches from MC\_Maze, converts model, evaluates both fp32 and INT8 on validation set, writes `benchmarks/quantization/results.md`.
 
+### Phase 4 — Operations and Observability ✓
+
+- **Prometheus metrics** (`cortex/serve/metrics.py`): 11 metrics exported at `GET /metrics` via prometheus\_client ASGI sub-app. Request counters and latency histograms by endpoint; queue depth and wait histograms; inference latency histogram; batch size histogram; GPU memory and utilization gauges (NVML via `torch.cuda.utilization()`); KV cache pages-used and hit-rate gauges (updated by `StreamingKVCache` on every read/write).
+- **OpenTelemetry tracing** (`cortex/serve/tracing.py`, wired in `app.py`): `configure_tracing()` initialises a `TracerProvider` with optional OTLP gRPC export (`CORTEX_OTEL_ENDPOINT`); `instrument_fastapi(app)` auto-instruments all HTTP routes. The `/decode` handler adds a manual `decode.schedule` span with `request_id`, `n_events`, and `deadline_ms` attributes. The scheduler captures the caller's OTel context at enqueue time and restores it before dispatch so `scheduler.dispatch` spans appear as children of the HTTP request span in traces. An OTel Collector service (`otel/opentelemetry-collector-contrib:0.103.0`) is included in the docker-compose stack.
+- **Three Grafana dashboards** (auto-provisioned at startup from `ops/dashboards/`):
+  - **Traffic** (`cortex-traffic`): request rate by endpoint, error rate by type, queue depth, Little's Law in-flight estimate — all over 5 s refresh.
+  - **Latency** (`cortex-latency`): p50/p95/p99/p99.9 end-to-end latency time series; queue-wait vs inference-time p99 breakdown; SLO budget burn stat panel (1× = on budget, >5× pages on-call); batch-size heatmap.
+  - **Resources** (`cortex-resources`): GPU memory used (bytes), GPU utilization % with 60/85/95% thresholds, KV cache pages used, KV cache hit rate with 50/80% green bands.
+- **Alertmanager rules** (`ops/docker/alerts.yml`): `HighP99Latency` (>50 ms for 2 min), `HighErrorRate` (>0.1% for 2 min), `QueueNearSaturation` (queue > 200 for 1 min), `HighGPUMemory` (>90% of 80 GB A100 for 2 min).
+- **docker-compose stack** (`ops/docker/docker-compose.yml`): cortex-engine + Prometheus + Grafana + OTel Collector + k6 loadgen (profile "loadtest"). CPU-mode override in `docker-compose.cpu.yml` for development without an NVIDIA GPU. `CORTEX_*` env vars corrected throughout.
+- **Multi-stage Dockerfiles**: `Dockerfile` (CUDA 12.4, production) and `Dockerfile.cpu` (Python 3.11-slim, CPU-only for CI / Mac dev).
+- **Helm chart** (`ops/helm/cortex-engine/`): Deployment + Service + ServiceMonitor manifests. GPU node selector/toleration, pod annotations for Prometheus scrape, readiness/liveness probes, autoscaling tied to `cortex_queue_depth`. Fixed env var names to match `CORTEX_*` prefix.
+- **SLO doc** (`docs/slo.md`): latency SLO (p99 < 50 ms), availability SLO (99.9%), burn-rate alerting methodology.
+- **Runbook** (`docs/runbook.md`): complete — deployment (local, CPU-override, Helm), observability stack reference, all common incidents with diagnosis trees and mitigations, routine operations.
+
 ---
 
 ## Tech Stack
@@ -290,21 +305,48 @@ PYTHONPATH=. .venv/bin/python scripts/load_test.py \
     --url http://localhost:8080 --concurrency 32 --requests 500
 ```
 
+### Start the full observability stack (docker compose)
+
+Requires Docker. On a CUDA host:
+
+```bash
+make docker-build         # builds cortex-engine:latest from Dockerfile
+make docker-up            # docker compose up -d
+
+# Services:
+#   http://localhost:8080  — inference API
+#   http://localhost:9090  — Prometheus
+#   http://localhost:3000  — Grafana  (admin / admin)
+#   localhost:4317         — OTel Collector (gRPC)
+
+# Run k6 load test against the live stack:
+docker compose -f ops/docker/docker-compose.yml --profile loadtest run loadgen
+```
+
+On a CPU-only machine (Mac / CI — no NVIDIA GPU):
+
+```bash
+docker compose \
+  -f ops/docker/docker-compose.yml \
+  -f ops/docker/docker-compose.cpu.yml \
+  up
+```
+
+### Grafana dashboards
+
+Three dashboards are auto-provisioned at startup (Grafana → Dashboards → Cortex):
+
+**Traffic dashboard** (`cortex-traffic`) — request rate by endpoint, error rate by type, queue depth, Little's Law in-flight estimate. After `make docker-up` + a few seconds of load, you see a steady ~100 req/s rate line on the top-left panel and near-zero error rate on the top-right. Queue depth stays at 0–2 under normal conditions.
+
+**Latency dashboard** (`cortex-latency`) — p50/p95/p99/p99.9 end-to-end latency time series with 30 ms / 50 ms warning/critical thresholds highlighted. Bottom-left SLO burn gauge reads < 1× (green) during normal operation and spikes to red when the k6 ramping scenario saturates the server. Batch-size heatmap shows the continuous batching coalescing requests into batches of 16–32.
+
+**Resources dashboard** (`cortex-resources`) — GPU memory used (bytes), GPU utilization % with green (60%) / yellow (85%) / red (95%) bands, KV cache pages used (climbs during streaming sessions, drops on LRU eviction), KV cache hit rate (green above 80% — exploiting the 91.6% sliding-window overlap).
+
 ---
 
 ## Roadmap
 
-### Phase 4 — Operations and Observability (next)
-
-- Prometheus metrics endpoint with custom counters / histograms / gauges
-- Three Grafana dashboards (traffic, latency, resources) with JSON export
-- OpenTelemetry distributed tracing through the full request path
-- Multi-stage Dockerfile (target < 500 MB image)
-- `docker compose up` brings up engine + Prometheus + Grafana + load generator
-- Helm chart skeleton
-- SLO definitions (`docs/slo.md`) with burn-rate alerting rules
-
-### Phase 5 — Writeup
+### Phase 5 — Writeup (next)
 
 - Long-form engineering postmortem (`docs/writeup.md`, ~4 000 words)
 - Architecture diagrams (Mermaid)
