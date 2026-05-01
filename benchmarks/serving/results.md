@@ -1,59 +1,60 @@
-# Phase 3 Serving Benchmarks
+# Inference Engine Load Test — Phase 3
 
-> Populated by `make bench-serving` (k6 load tests) and ad-hoc latency
-> probes.
+Measured: 2026-05-01
+Hardware: mps
+Mode: in_process
+Requests: 200 total, 16 concurrent
+Events per request: 256
+Max batch size: 32
+Batch timeout: 5.0 ms
 
-## Hardware
+---
 
-TBD
+## Summary
 
-## Latency Distribution at Various Loads
-
-### Constant load: 100 req/s
-
-| Percentile | Latency |
+| Metric | Value |
 |---|---|
-| p50 | TBD |
-| p95 | TBD |
-| p99 | TBD |
-| p99.9 | TBD |
+| Successes | 200 / 200 |
+| Failures | 0 |
+| Throughput | **157.3 req/s** |
+| Total test time | 1.27 s |
 
-### Saturating load (find the breaking point)
+---
 
-| Target rate (req/s) | Sustained rate | p99 latency | Errors |
-|---|---|---|---|
-| 100 | TBD | TBD | TBD |
-| 500 | TBD | TBD | TBD |
-| 1000 | TBD | TBD | TBD |
-| 2000 | TBD | TBD | TBD |
+## Latency Distribution (ms)
 
-The system saturates at TBD req/s. Beyond that, queue depth grows unboundedly.
+*Measured from scheduler.submit() to result return (includes queue wait + inference).*
 
-## Batch Effects
+| Percentile | ms |
+|---|---|
+| p50 | 70.18 |
+| p75 | 72.05 |
+| p90 | 137.97 |
+| p95 | 356.15 |
+| **p99** | **358.46** |
+| max | 359.09 |
+| mean | 95.74 |
+| min | 67.38 |
 
-| Batch size | Throughput (req/s) | Avg latency | GPU utilization |
-|---|---|---|---|
-| 1 | TBD | TBD | TBD |
-| 8 | TBD | TBD | TBD |
-| 16 | TBD | TBD | TBD |
-| 32 | TBD | TBD | TBD |
+---
 
-## Cortex-Engine vs Naive PyTorch Baseline
+## Notes
 
-The naive baseline is a FastAPI server that does sync `model(x)` per request,
-no batching, no scheduler.
+- **SLO target:** p99 < 30 ms on CUDA A100.  Numbers above are on mps.
+- **Mode:** `in_process` — latency includes scheduler queue wait + inference only,
+  NOT HTTP serialization or TCP.
+- **Batch dynamics:** up to 32 requests per batch, formed
+  within a 5.0 ms window.  At concurrency=16
+  on mps, batches typically contain
+  16 requests.
+- The SLO target requires CUDA hardware; MPS/CPU numbers above are for
+  infrastructure correctness validation, not production benchmarking.
 
-| Metric | Naive PyTorch | Cortex-Engine | Improvement |
-|---|---|---|---|
-| Throughput at p99 < 50ms | TBD | TBD | TBD |
-| Peak memory at saturation | TBD | TBD | TBD |
-| GPU utilization at saturation | TBD | TBD | TBD |
-
-## Reproducibility
+## To Reproduce
 
 ```bash
-make docker-up
-docker compose -f ops/docker/docker-compose.yml --profile loadtest run loadgen
+PYTHONPATH=. .venv/bin/python scripts/load_test.py \
+    --concurrency 16 \
+    --requests 200 \
+    --events 256
 ```
-
-Full k6 reports in `benchmarks/serving/k6_*.json`.
