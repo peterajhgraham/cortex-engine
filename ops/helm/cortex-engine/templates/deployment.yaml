@@ -31,14 +31,24 @@ spec:
               containerPort: {{ .Values.service.port }}
               protocol: TCP
           env:
-            - name: MAX_BATCH_SIZE
+            - name: CORTEX_MAX_BATCH
               value: "{{ .Values.config.maxBatchSize }}"
-            - name: MAX_QUEUE_SIZE
-              value: "{{ .Values.config.maxQueueSize }}"
-            - name: BATCH_TIMEOUT_MS
+            - name: CORTEX_BATCH_TIMEOUT_MS
               value: "{{ .Values.config.batchTimeoutMs }}"
-            - name: DEADLINE_MS
+            - name: CORTEX_DEADLINE_MS
               value: "{{ .Values.config.deadlineMs }}"
+            - name: CORTEX_DEVICE
+              value: "{{ .Values.config.device | default \"cuda\" }}"
+            - name: CORTEX_LOG_LEVEL
+              value: "{{ .Values.config.logLevel | default \"INFO\" }}"
+            {{- if .Values.config.otelEndpoint }}
+            - name: CORTEX_OTEL_ENDPOINT
+              value: "{{ .Values.config.otelEndpoint }}"
+            {{- end }}
+            {{- if .Values.config.checkpointPath }}
+            - name: CORTEX_CHECKPOINT
+              value: "{{ .Values.config.checkpointPath }}"
+            {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}

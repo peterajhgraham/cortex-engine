@@ -37,6 +37,10 @@ config:
   maxQueueSize: 256
   batchTimeoutMs: 5
   deadlineMs: 30
+  device: "cuda"
+  logLevel: "INFO"
+  # otelEndpoint: "http://otel-collector:4317"
+  # checkpointPath: "/checkpoints/cortex_s.pt"
 
 probes:
   liveness:
