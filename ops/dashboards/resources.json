@@ -11,31 +11,88 @@
       "title": "GPU memory used",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "targets": [{ "expr": "cortex_gpu_memory_used_bytes" }],
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "cortex_gpu_memory_used_bytes",
+          "legendFormat": "GPU memory"
+        }
+      ],
       "fieldConfig": { "defaults": { "unit": "bytes" } }
     },
     {
       "id": 2,
-      "title": "GPU utilization",
+      "title": "GPU utilization (%)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "targets": [{ "expr": "cortex_gpu_utilization_percent" }],
-      "fieldConfig": { "defaults": { "unit": "percent" } }
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "cortex_gpu_utilization_percent",
+          "legendFormat": "GPU util"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 60 },
+              { "color": "yellow", "value": 85 },
+              { "color": "red", "value": 95 }
+            ]
+          }
+        }
+      }
     },
     {
       "id": 3,
       "title": "KV cache pages used",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "targets": [{ "expr": "cortex_kv_cache_pages_used" }]
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "cortex_kv_cache_pages_used",
+          "legendFormat": "pages used"
+        }
+      ]
     },
     {
       "id": 4,
       "title": "KV cache hit rate",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "targets": [{ "expr": "cortex_kv_cache_hit_rate" }],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "cortex_kv_cache_hit_rate",
+          "legendFormat": "hit rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 0.8 }
+            ]
+          }
+        }
+      }
     }
   ]
 }

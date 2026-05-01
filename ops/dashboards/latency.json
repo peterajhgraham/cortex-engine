@@ -11,20 +11,25 @@
       "title": "End-to-end latency percentiles",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.50, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
           "legendFormat": "p50"
         },
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
           "legendFormat": "p95"
         },
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
           "legendFormat": "p99"
         },
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.999, sum by (le) (rate(cortex_request_latency_seconds_bucket[1m])))",
           "legendFormat": "p99.9"
         }
@@ -45,15 +50,18 @@
     },
     {
       "id": 2,
-      "title": "Latency breakdown: queue vs inference",
+      "title": "Latency breakdown: queue wait vs inference",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(cortex_queue_wait_seconds_bucket[1m])))",
           "legendFormat": "queue p99"
         },
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(cortex_inference_latency_seconds_bucket[1m])))",
           "legendFormat": "inference p99"
         }
@@ -62,17 +70,21 @@
     },
     {
       "id": 3,
-      "title": "SLO budget burn",
+      "title": "SLO budget burn (× error budget)",
+      "description": "1× = burning at exactly the allowed rate. >5× pages on-call.",
       "type": "stat",
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "(rate(cortex_request_latency_seconds_count[1h]) - rate(cortex_request_latency_seconds_bucket{le=\"0.05\"}[1h])) / rate(cortex_request_latency_seconds_count[1h]) / 0.01"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -89,8 +101,14 @@
       "title": "Batch size distribution",
       "type": "heatmap",
       "gridPos": { "h": 8, "w": 18, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "rate(cortex_batch_size_bucket[1m])", "format": "heatmap" }
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(cortex_batch_size_bucket[1m])",
+          "format": "heatmap",
+          "legendFormat": "{{ le }}"
+        }
       ]
     }
   ]

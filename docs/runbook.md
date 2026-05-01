@@ -2,6 +2,8 @@
 
 Operational procedures for Cortex-Engine.
 
+---
+
 ## Deployment
 
 ### Local development
@@ -11,7 +13,7 @@ make dev-install
 make serve  # http://localhost:8080
 ```
 
-### Full stack with observability
+### Full stack with observability (CUDA host)
 
 ```bash
 make docker-build
@@ -19,86 +21,191 @@ make docker-up
 # API:        http://localhost:8080
 # Prometheus: http://localhost:9090
 # Grafana:    http://localhost:3000  (admin / admin)
+# OTel:       localhost:4317 (gRPC)
 ```
 
-### Production deployment
+### Full stack on a CPU-only machine (Mac / CI)
 
-The Helm chart is in `ops/helm/cortex-engine/`. Validate before applying:
+```bash
+docker compose \
+  -f ops/docker/docker-compose.yml \
+  -f ops/docker/docker-compose.cpu.yml \
+  up
+```
+
+This uses `Dockerfile.cpu` (Python 3.11-slim, CPU PyTorch) and removes the
+NVIDIA GPU device reservation.
+
+### Production deployment (Kubernetes)
+
+The Helm chart lives in `ops/helm/cortex-engine/`. Validate before applying:
 
 ```bash
 helm lint ops/helm/cortex-engine
-helm install cortex ops/helm/cortex-engine --namespace cortex --create-namespace
+helm install cortex ops/helm/cortex-engine \
+  --namespace cortex \
+  --create-namespace \
+  --set config.otelEndpoint=http://otel-collector.observability:4317 \
+  --set config.checkpointPath=/checkpoints/cortex_s.pt
 ```
+
+Rolling update:
+
+```bash
+helm upgrade cortex ops/helm/cortex-engine \
+  --set image.tag=<new-sha>
+```
+
+---
+
+## Observability Stack
+
+| Service | URL | Credentials |
+|---|---|---|
+| Inference API | http://localhost:8080 | — |
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3000 | admin / admin |
+| OTel collector | localhost:4317 (gRPC) | — |
+
+### Grafana dashboards
+
+Three dashboards are auto-provisioned at startup from `ops/dashboards/`:
+
+| Dashboard | UID | What to look at |
+|---|---|---|
+| Traffic | `cortex-traffic` | Request rate, error rate, queue depth |
+| Latency | `cortex-latency` | p50/p95/p99 end-to-end, SLO burn gauge |
+| Resources | `cortex-resources` | GPU memory, GPU utilization, KV cache hit rate |
+
+All dashboards auto-refresh every 5 seconds and show a 15-minute rolling window by default.
+
+---
 
 ## Common Incidents
 
-### High p99 latency
+### High p99 latency (`HighP99Latency` alert)
 
-**Symptoms:** `HighP99Latency` alert; p99 above 50ms for 2+ minutes.
+**Symptoms:** p99 above 50 ms for 2+ minutes.
 
-**Diagnosis steps:**
+**Diagnosis:**
 
-1. Check the Grafana **Latency** dashboard. Is the entire distribution shifting up, or only the tail?
-2. Look at the **Resources** dashboard. Is GPU utilization saturated?
-3. Check the **Traffic** dashboard. Is request rate higher than usual?
-4. Check `cortex_queue_depth`. Is the scheduler queue backing up?
+1. Open the **Latency** dashboard. Is the entire latency distribution elevated,
+   or only the tail?
+2. Check **Resources**: is GPU utilization at 100% and/or memory near the limit?
+3. Check **Traffic**: has request rate increased beyond normal?
+4. Check `cortex_queue_depth` — is the scheduler queue backing up?
+5. Pull an OTel trace of a slow request to identify the slow stage
+   (enqueue, `scheduler.dispatch`, or model forward).
+
+**Common causes and fixes:**
+
+| Cause | Fix |
+|---|---|
+| Traffic spike | Horizontal scale or activate rate limiting |
+| GPU memory pressure | Reduce `CORTEX_MAX_BATCH` or `kv_cache_pages` |
+| Bad client sending oversized windows | Add per-session rate limiting |
+| Recent bad deploy | Roll back (see below) |
+
+### Error rate spike (`HighErrorRate` alert)
+
+**Symptoms:** error rate above 0.1% for 2+ minutes.
+
+**Diagnosis:**
+
+1. Filter structured logs by `error_type` (e.g., `worker_error`, `queue_full`).
+2. Pull OTel traces of failing requests to see which stage threw.
+3. Cross-reference with recent deployments (`git log --oneline -10`).
 
 **Common causes:**
-- Traffic spike beyond capacity → scale horizontally
-- Recent deployment introduced a regression → roll back
-- GPU memory pressure causing eviction → check `cortex_kv_cache_pages_used`
-- Bad client sending unusually large windows → throttle by `session_id`
 
-### Error rate spike
-
-**Symptoms:** `HighErrorRate` alert.
-
-**Diagnosis steps:**
-
-1. Check structured logs filtered by `error_type`
-2. Look at OpenTelemetry traces of failing requests
-3. Cross-reference with deployment timeline
-
-**Common causes:**
-- Bad request payloads from a misbehaving client
-- OOM after a memory leak (check `cortex_gpu_memory_used_bytes` trend)
-- Downstream dependency failure
+- `queue_full` (HTTP 429): arrival rate > serving capacity; scale out or increase
+  `CORTEX_MAX_BATCH` if GPU has headroom.
+- `inference_error`: model exception, often an OOM or bad input shape. Check logs
+  for the actual Python traceback.
+- `worker_error`: unhandled exception in the worker thread. Restart the service.
 
 ### GPU OOM
 
-**Symptoms:** `HighGPUMemory` alert; CUDA OOM in logs.
+**Symptoms:** `HighGPUMemory` alert; `CUDA out of memory` in logs.
 
-**Mitigation:**
+**Immediate mitigation:**
 
-1. Restart the inference server (releases all GPU memory)
-2. Reduce `max_batch_size` temporarily in serving config
-3. Reduce `kv_cache_pages` if the cache is the dominant consumer
+```bash
+# Restart the service (releases all GPU memory)
+docker compose restart cortex-engine
+# or in Kubernetes:
+kubectl rollout restart deployment/cortex -n cortex
+```
 
-**Long-term fix:** investigate via `nvidia-smi`, PyTorch memory snapshots, and the
-GPU memory dashboard.
+**Tuning levers:**
+
+```bash
+# Reduce max batch (less peak activation memory)
+CORTEX_MAX_BATCH=16
+
+# Reduce KV cache pages (currently hardcoded in app; will be config in Phase 5)
+# Default: num_pages=128 × page_size=64 × hidden_dim=512 × 4 bytes = 16 MB
+```
+
+**Long-term:** inspect via `nvidia-smi dmon` and PyTorch memory snapshot:
+`torch.cuda.memory._dump_snapshot("mem.pickle")`.
+
+### Queue saturation (`QueueNearSaturation` alert)
+
+**Symptoms:** `cortex_queue_depth` > 200 for 1+ minute.
+
+**Fix:** Scale horizontally — add replicas behind a load balancer. Cortex-Engine
+is stateless between requests; each replica runs an independent scheduler and
+worker. The KV cache is per-process (not shared).
+
+---
 
 ## Routine Operations
 
-### Loading a new model checkpoint
+### Load a new model checkpoint
 
-1. Train with `make train-s` or your custom config
-2. Validate accuracy on held-out set: `python -m cortex.training.eval --checkpoint <path>`
-3. Update `serving.checkpoint_path` config
-4. Trigger rolling restart
+1. Train: `make train-s` or custom config
+2. Validate on held-out set: `PYTHONPATH=. .venv/bin/python -m cortex.training.eval --checkpoint <path>`
+3. Set `CORTEX_CHECKPOINT=/app/checkpoints/<new>.pt` and trigger a rolling restart
 
-### Running a load test
+### Run a k6 load test
 
 ```bash
 make docker-up
-docker compose -f ops/docker/docker-compose.yml --profile loadtest run loadgen
+
+# In a separate terminal:
+docker compose -f ops/docker/docker-compose.yml \
+  --profile loadtest \
+  run loadgen
 ```
 
-Results stream to stdout. Check Grafana dashboards for system behavior under load.
+Results stream to stdout. Watch the Grafana **Latency** dashboard for live
+system behavior under load. Results are also written to `benchmarks/serving/`.
 
-### Capturing a profile
+### Capture an inference profile
 
 ```bash
-python -m cortex.benchmarks.profile_inference --output benchmarks/profiling/$(date +%Y%m%d).json
+PYTHONPATH=. .venv/bin/python scripts/profile_inference.py \
+  --device auto --batch-size 32 --events-per-sample 512
+# Writes benchmarks/profiling/baseline_report.md
 ```
 
-Open in PyTorch profiler UI or Chrome trace viewer.
+### Roll back a bad deploy
+
+```bash
+# Docker Compose
+git checkout <previous-sha> -- ops/docker/docker-compose.yml
+docker compose pull && docker compose up -d
+
+# Kubernetes
+helm rollback cortex -n cortex
+```
+
+### SLO burn-rate dashboard interpretation
+
+The **Latency** panel "SLO budget burn" shows multiples of the error budget consumed:
+- **< 1×**: healthy — burning error budget slower than it replenishes
+- **1–5×**: warning — investigate; burn-rate alert fires at 1× for 1 hour
+- **> 5×**: critical — page on-call; exhausts monthly budget in < 6 days
+
+Full SLO definitions: [`docs/slo.md`](slo.md).

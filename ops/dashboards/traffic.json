@@ -11,8 +11,10 @@
       "title": "Request rate (req/s)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "sum by (endpoint) (rate(cortex_requests_total[1m]))",
           "legendFormat": "{{ endpoint }}"
         }
@@ -23,8 +25,10 @@
       "title": "Error rate",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "sum by (error_type) (rate(cortex_errors_total[1m]))",
           "legendFormat": "{{ error_type }}"
         }
@@ -35,17 +39,26 @@
       "title": "Queue depth",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "targets": [{ "expr": "cortex_queue_depth" }]
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "cortex_queue_depth",
+          "legendFormat": "queue depth"
+        }
+      ]
     },
     {
       "id": 4,
-      "title": "Concurrent in-flight requests",
+      "title": "Concurrent in-flight (Little's Law estimate)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(cortex_requests_total[1m]) * histogram_quantile(0.5, rate(cortex_request_latency_seconds_bucket[1m]))",
-          "legendFormat": "Little's Law estimate"
+          "legendFormat": "in-flight"
         }
       ]
     }
