@@ -43,7 +43,7 @@ import torch
 from torch import nn
 
 from cortex.models.config import CortexConfig
-from cortex.serve.metrics import BATCH_SIZE, GPU_MEMORY_USED, INFERENCE_LATENCY
+from cortex.serve.metrics import BATCH_SIZE, GPU_MEMORY_USED, GPU_UTILIZATION, INFERENCE_LATENCY
 from cortex.utils.logging import get_logger
 
 log = get_logger(__name__)
@@ -221,8 +221,12 @@ class InferenceWorker:
 
         # ── Record metrics ────────────────────────────────────────────────────
         if self.device.type == "cuda":
-            allocated = torch.cuda.memory_allocated(self.device)
-            GPU_MEMORY_USED.set(allocated)
+            GPU_MEMORY_USED.set(torch.cuda.memory_allocated(self.device))
+            try:
+                # torch.cuda.utilization() calls NVML; may fail if nvml unavailable
+                GPU_UTILIZATION.set(float(torch.cuda.utilization(self.device)))
+            except Exception:
+                pass
 
         inference_ms = (time.perf_counter() - t0) * 1000
         INFERENCE_LATENCY.observe(inference_ms / 1000.0)
