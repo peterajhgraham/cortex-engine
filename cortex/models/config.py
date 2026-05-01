@@ -42,6 +42,9 @@ class CortexConfig(BaseModel):
     # Numeric
     dtype: str = Field("bfloat16", pattern="^(float32|float16|bfloat16)$")
 
+    # Phase 2: enable Triton kernels (requires CUDA; silently falls back to PyTorch on MPS/CPU)
+    use_kernels: bool = False
+
     @model_validator(mode="after")
     def _check_head_consistency(self) -> CortexConfig:
         if self.hidden_dim % self.num_heads != 0:

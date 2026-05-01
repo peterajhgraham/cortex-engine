@@ -3,20 +3,21 @@
 Converts (neuron_id, time_bin, value) triplets into embedded tokens for the
 Perceiver encoder.
 
-Implementation notes for Claude Code:
-    - Phase 1 implements this in pure PyTorch.
-    - Phase 2 adds a fused Triton kernel in `cortex/kernels/tokenizer.py`,
-      with this module dispatching between them based on `config.use_kernels`.
-
 Design rationale:
     Each spike event becomes a single token. The token embedding is the sum of:
         1. A learned embedding indexed by neuron_id  (per-unit identity)
         2. A learned embedding indexed by quantized time_bin  (temporal position)
         3. A learned embedding indexed by quantized spike value bucket
-    This is the same factorization as POYO. It scales to multiple sessions because
-    neuron embeddings are learned from data, not hard-coded.
+    This is the same factorisation as POYO.  It scales to multiple sessions
+    because neuron embeddings are learned from data, not hard-coded.
 
-Shapes (E = number of spike events in batch):
+Phase 2:
+    When config.use_kernels is True AND CUDA is available, forward() dispatches
+    to cortex.kernels.tokenizer.fused_tokenizer, which fuses the three embedding
+    lookups into one kernel and eliminates two intermediate (E, D) tensors.
+    On MPS / CPU it falls back to the pure-PyTorch path transparently.
+
+Shapes (E = total spike events across the batch):
     Input:
         neuron_ids: int64 (E,) in [0, max_neurons)
         time_bins:  int64 (E,) in [0, max_time_bins)
@@ -34,19 +35,15 @@ from cortex.models.config import CortexConfig
 
 
 class SpikeTokenizer(nn.Module):
-    """Embed spike events as tokens for the Perceiver encoder.
-
-    The forward pass is intentionally simple: three embedding lookups summed.
-    Phase 2 will replace this with a fused Triton kernel for speed.
-    """
+    """Embed spike events as tokens for the Perceiver encoder."""
 
     def __init__(self, config: CortexConfig) -> None:
         super().__init__()
         self.config = config
 
         self.neuron_emb = nn.Embedding(config.max_neurons, config.hidden_dim)
-        self.time_emb = nn.Embedding(config.max_time_bins, config.hidden_dim)
-        self.value_emb = nn.Embedding(config.spike_value_buckets, config.hidden_dim)
+        self.time_emb   = nn.Embedding(config.max_time_bins, config.hidden_dim)
+        self.value_emb  = nn.Embedding(config.spike_value_buckets, config.hidden_dim)
 
         self._init_weights()
 
@@ -57,8 +54,8 @@ class SpikeTokenizer(nn.Module):
     def forward(
         self,
         neuron_ids: torch.Tensor,
-        time_bins: torch.Tensor,
-        values: torch.Tensor,
+        time_bins:  torch.Tensor,
+        values:     torch.Tensor,
     ) -> torch.Tensor:
         """Embed a batch of spike events.
 
@@ -68,7 +65,7 @@ class SpikeTokenizer(nn.Module):
             values:     (E,) int64 tensor of bucketed spike values
 
         Returns:
-            tokens: (E, hidden_dim) float tensor in self.config.dtype
+            tokens: (E, hidden_dim) float tensor
         """
         if not (neuron_ids.shape == time_bins.shape == values.shape):
             raise ValueError(
@@ -76,4 +73,19 @@ class SpikeTokenizer(nn.Module):
                 f"time_bins={time_bins.shape}, values={values.shape}"
             )
 
-        return self.neuron_emb(neuron_ids) + self.time_emb(time_bins) + self.value_emb(values)
+        if self.config.use_kernels and torch.cuda.is_available():
+            from cortex.kernels.tokenizer import fused_tokenizer
+            return fused_tokenizer(
+                self.neuron_emb.weight,
+                self.time_emb.weight,
+                self.value_emb.weight,
+                neuron_ids,
+                time_bins,
+                values,
+            )
+
+        return (
+            self.neuron_emb(neuron_ids)
+            + self.time_emb(time_bins)
+            + self.value_emb(values)
+        )
