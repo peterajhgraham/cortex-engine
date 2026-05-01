@@ -2,7 +2,7 @@
 
 **Real-time inference infrastructure for transformer-based neural decoders.**
 
-Cortex-Engine is a production-oriented ML systems project that builds the full stack for deploying a Perceiver-style transformer decoder on neural population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). It covers custom Triton GPU kernels, a profiling-driven optimization workflow, INT8 quantization with calibration, and a continuous-batching inference server — targeting sub-30ms p99 latency for streaming brain-computer interface (BCI) decoding on a single A100. The infrastructure patterns are directly applicable to LLM serving: the same continuous batching, paged KV cache, FSDP training, and custom kernel workflow appear verbatim in production inference systems.
+Cortex-Engine is a production-oriented ML systems project that builds the full stack for deploying a Perceiver-style transformer decoder on neural population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). It covers a profiling-driven optimization workflow, three custom Triton GPU kernels, per-channel INT8 quantization with calibration (72% weight memory reduction), and a continuous-batching inference server with full observability — targeting sub-30ms p99 latency for streaming brain-computer interface (BCI) decoding on a single A100. Development ran entirely on Apple M4 Pro MPS; CUDA benchmark numbers are pending but the architecture for the target is in place. The infrastructure patterns are directly applicable to LLM serving: the same continuous batching, paged KV cache, FSDP training, and custom kernel workflow appear verbatim in production inference systems.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)](#)
 [![PyTorch](https://img.shields.io/badge/pytorch-2.2+-orange)](#)
@@ -181,6 +181,10 @@ All three kernels: PyTorch reference implementation, Triton kernel, correctness 
 - **SLO doc** (`docs/slo.md`): latency SLO (p99 < 50 ms), availability SLO (99.9%), burn-rate alerting methodology.
 - **Runbook** (`docs/runbook.md`): complete — deployment (local, CPU-override, Helm), observability stack reference, all common incidents with diagnosis trees and mitigations, routine operations.
 
+### Phase 5 — Writeup ✓
+
+- **Engineering postmortem** (`docs/writeup.md`): ~3 500 words covering motivation, architecture decisions, the profiling-first workflow, Triton kernel design, INT8 calibration, serving engine design, honest results with hardware caveats, and "what I'd do differently."
+
 ---
 
 ## Tech Stack
@@ -344,13 +348,11 @@ Three dashboards are auto-provisioned at startup (Grafana → Dashboards → Cor
 
 ---
 
-## Roadmap
+## Phase 5 — Writeup ✓
 
-### Phase 5 — Writeup (next)
+- **Long-form engineering postmortem** (`docs/writeup.md`, ~3 500 words): motivation, architecture decisions, profiling methodology, kernel design, quantization approach, serving design, results with honest hardware caveats, and a "what I'd do differently" section.
 
-- Long-form engineering postmortem (`docs/writeup.md`, ~4 000 words)
-- Architecture diagrams (Mermaid)
-- Demo GIF of inference server under load
+Architecture diagrams (Mermaid) and a demo GIF are not yet complete.
 
 ---
 
