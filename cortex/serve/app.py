@@ -44,6 +44,7 @@ from cortex.models.config import CORTEX_S
 from cortex.serve.metrics import ERROR_COUNTER, QUEUE_DEPTH, REQUEST_COUNTER, REQUEST_LATENCY
 from cortex.serve.scheduler import QueueFullError, Scheduler
 from cortex.serve.schemas import DecodeRequest, DecodeResponse, HealthResponse, StreamFrame, StreamResponse
+from cortex.serve.tracing import configure_tracing, get_tracer, instrument_fastapi
 from cortex.serve.worker import InferenceWorker, _detect_device, load_model
 from cortex.utils.logging import configure_logging, get_logger
 
@@ -59,6 +60,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize worker + scheduler at startup; clean up on shutdown."""
     configure_logging(level=_env("LOG_LEVEL", "INFO"))
     log.info("server_startup")
+
+    # ── Tracing ───────────────────────────────────────────────────────────────
+    otel_endpoint = _env("OTEL_ENDPOINT", "") or None
+    configure_tracing(endpoint=otel_endpoint)
+    instrument_fastapi(app)
 
     # ── Device ───────────────────────────────────────────────────────────────
     device_str = _env("DEVICE", "auto")
@@ -148,6 +154,9 @@ async def ready(request: Request) -> HealthResponse:
     return HealthResponse(model_loaded=True, queue_depth=scheduler.queue_depth)
 
 
+_tracer = get_tracer("cortex.serve")
+
+
 @app.post("/decode", response_model=DecodeResponse)
 async def decode(req: DecodeRequest, request: Request) -> DecodeResponse:
     """Submit a spike-event window and return behavioral predictions.
@@ -169,11 +178,15 @@ async def decode(req: DecodeRequest, request: Request) -> DecodeResponse:
 
     try:
         with REQUEST_LATENCY.labels(endpoint="decode").time():
-            result = await scheduler.submit(
-                payload=payload,
-                deadline_ms=deadline_ms,
-                request_id=req.request_id,
-            )
+            with _tracer.start_as_current_span("decode.schedule") as span:
+                span.set_attribute("request_id", req.request_id)
+                span.set_attribute("n_events", len(req.events))
+                span.set_attribute("deadline_ms", deadline_ms or -1)
+                result = await scheduler.submit(
+                    payload=payload,
+                    deadline_ms=deadline_ms,
+                    request_id=req.request_id,
+                )
     except QueueFullError as exc:
         ERROR_COUNTER.labels(error_type="queue_full").inc()
         raise HTTPException(status_code=429, detail=str(exc))

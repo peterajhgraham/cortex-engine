@@ -43,8 +43,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from opentelemetry import context as otel_context
+from opentelemetry import trace
+
 from cortex.serve.metrics import BATCH_SIZE, ERROR_COUNTER, QUEUE_DEPTH, QUEUE_WAIT
 from cortex.utils.logging import get_logger
+
+_tracer = trace.get_tracer("cortex.scheduler")
 
 log = get_logger(__name__)
 
@@ -66,6 +71,8 @@ class Request:
     payload: Any = field(compare=False)
     future: asyncio.Future[Any] = field(compare=False)
     enqueued_at: float = field(default_factory=time.monotonic, compare=False)
+    # Captured OTel context so inference spans are children of the caller's span
+    trace_ctx: Any = field(default=None, compare=False)
 
 
 class Scheduler:
@@ -132,6 +139,7 @@ class Scheduler:
             request_id=request_id,
             payload=payload,
             future=future,
+            trace_ctx=otel_context.get_current(),
         )
 
         # Admission control: fail fast rather than block on a full queue
@@ -182,8 +190,17 @@ class Scheduler:
 
             # ── Dispatch to worker ────────────────────────────────────────────
             payloads = [r.payload for r in batch]
+            # Attach the first request's trace context so the inference span is
+            # a child of the caller's HTTP handler span.
+            ctx_token = None
+            if batch and batch[0].trace_ctx is not None:
+                ctx_token = otel_context.attach(batch[0].trace_ctx)
             try:
-                results = await self.worker.run_batch(payloads)
+                with _tracer.start_as_current_span(
+                    "scheduler.dispatch",
+                    attributes={"batch_size": len(batch)},
+                ):
+                    results = await self.worker.run_batch(payloads)
             except Exception as exc:
                 log.error("worker_error", error=str(exc), batch_size=len(batch))
                 ERROR_COUNTER.labels(error_type="worker_error").inc()
@@ -191,6 +208,9 @@ class Scheduler:
                     if not req.future.done():
                         req.future.set_exception(exc)
                 continue
+            finally:
+                if ctx_token is not None:
+                    otel_context.detach(ctx_token)
 
             # ── Resolve per-request futures ───────────────────────────────────
             for req, result in zip(batch, results):
