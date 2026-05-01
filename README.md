@@ -46,12 +46,12 @@ Three Triton kernels are fully implemented and tested. Benchmark numbers are pen
 | Sparse cross-attention | Skips masked event tiles (O(1 − density) × K/V reads) | Block sparsity + FA2 |
 | Fused RMSNorm + linear | Eliminates x\_norm write + read (saves 2 × M × K bytes) | No HBM round-trip for intermediate |
 
-### Quantization (Phase 2.6 — MPS, Cortex-S, synthetic data)
+### Quantization (Phase 2.6 — MPS, Cortex-S, synthetic calibration data)
 
-| Configuration | Weight + buffer memory | MSE delta | Max abs output diff |
+| Configuration | Weight + buffer memory | Reduction | Max abs output diff |
 |---|---|---|---|
 | float32 baseline | 99.2 MB | — | — |
-| INT8 per-channel weights | **27.8 MB** | +0.0086% | 0.005 |
+| INT8 per-channel weights | **27.8 MB** | **−72%** (−71.4 MB) | 0.003 |
 
 Savings: −71.4 MB (72.0%). 34/35 linear layers quantized (the one exception: `MaskedSpikeHead.proj` is gated by `return_aux=True` and never activates during a standard forward pass, so no calibration data was collected for it). Numbers measured with randomly initialized weights and synthetic spike events — MSE delta is not meaningful for model quality, but output fidelity (max abs diff 0.005) is. Full report: [`benchmarks/quantization/results.md`](benchmarks/quantization/results.md).
 
