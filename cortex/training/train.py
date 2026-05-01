@@ -19,7 +19,7 @@ import math
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import hydra
 import torch
@@ -74,7 +74,7 @@ def is_main_process() -> bool:
 
 def build_model(model_cfg: DictConfig) -> CortexModel:
     """Build a CortexModel from a Hydra/Omega model config."""
-    config = CortexConfig(**OmegaConf.to_container(model_cfg, resolve=True))  # type: ignore[arg-type]
+    config = CortexConfig(**cast(dict[str, Any], OmegaConf.to_container(model_cfg, resolve=True)))
     return CortexModel(config)
 
 
@@ -107,9 +107,9 @@ def maybe_wrap_fsdp(
     # Shard each transformer block first, then the root, so the root's
     # forward sees already-sharded children and can stage all-gathers
     # block-by-block rather than once for the whole model.
-    cortex_model = model.encoder if isinstance(model, CortexModel) else model
-    for block in cortex_model.self_attn_blocks:  # type: ignore[union-attr]
-        fully_shard(block, mp_policy=mp_policy)
+    if isinstance(model, CortexModel):
+        for block in model.encoder.self_attn_blocks:
+            fully_shard(block, mp_policy=mp_policy)
     fully_shard(model, mp_policy=mp_policy)
     return model
 
@@ -204,7 +204,7 @@ def main(cfg: DictConfig) -> None:
     model = build_model(cfg.model).to(device)
     model = maybe_wrap_fsdp(model, enable_mixed_precision=cfg.runtime.mixed_precision)
     if cfg.runtime.compile:
-        model = torch.compile(model)  # type: ignore[assignment]
+        model = cast(nn.Module, torch.compile(model))
 
     # Data
     train_loader, val_loader = build_dataloaders(cfg.data, world_size=world_size, rank=rank)

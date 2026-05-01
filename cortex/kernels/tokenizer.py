@@ -49,6 +49,8 @@ References
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 try:
@@ -83,7 +85,7 @@ def fused_tokenizer_reference(
 
 if _TRITON_AVAILABLE:
 
-    @triton.autotune(
+    @triton.autotune(  # type: ignore[untyped-decorator]  # triton.jit is intentionally untyped
         configs=[
             # Small D — pack more events per block
             triton.Config({"BLOCK_E": 64, "BLOCK_D": 64}, num_warps=4),
@@ -100,8 +102,8 @@ if _TRITON_AVAILABLE:
         ],
         key=["E", "D"],  # re-autotune when input shape changes; does NOT require constexpr
     )
-    @triton.jit
-    def _fused_tokenizer_kernel(
+    @triton.jit  # type: ignore[untyped-decorator]
+    def _fused_tokenizer_kernel(  # type: ignore[no-untyped-def]
         # Embedding weight matrices (each row-major, shape (vocab, D))
         neuron_emb_ptr,
         time_emb_ptr,
@@ -226,7 +228,7 @@ def fused_tokenizer(
 
     out = torch.empty((E, D), dtype=neuron_emb.dtype, device=device)
 
-    def grid(meta: dict) -> tuple[int, int]:
+    def grid(meta: dict[str, Any]) -> tuple[int, int]:
         return (triton.cdiv(E, meta["BLOCK_E"]), triton.cdiv(D, meta["BLOCK_D"]))
 
     _fused_tokenizer_kernel[grid](

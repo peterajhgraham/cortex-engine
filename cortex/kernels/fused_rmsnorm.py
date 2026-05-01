@@ -67,6 +67,8 @@ References
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 try:
@@ -110,7 +112,7 @@ def rms_norm_linear_reference(
 
 if _TRITON_AVAILABLE:
 
-    @triton.autotune(
+    @triton.autotune(  # type: ignore[untyped-decorator]  # triton.jit is intentionally untyped
         configs=[
             triton.Config({"BLOCK_M": 16, "BLOCK_N": 64, "BLOCK_K": 64}, num_warps=4),
             triton.Config({"BLOCK_M": 16, "BLOCK_N": 128, "BLOCK_K": 64}, num_warps=4),
@@ -124,8 +126,8 @@ if _TRITON_AVAILABLE:
         ],
         key=["M", "K", "N"],
     )
-    @triton.jit
-    def _rms_norm_linear_fwd(
+    @triton.jit  # type: ignore[untyped-decorator]
+    def _rms_norm_linear_fwd(  # type: ignore[no-untyped-def]
         x_ptr,  # (M, K)
         gamma_ptr,  # (K,)
         w_ptr,  # (K, N) — weight already in K-major layout (row = input feature)
@@ -275,7 +277,7 @@ def rms_norm_linear(
 
     out = torch.empty((M, N), dtype=x.dtype, device=device)
 
-    def grid(meta: dict) -> tuple[int, int]:
+    def grid(meta: dict[str, Any]) -> tuple[int, int]:
         return (triton.cdiv(M, meta["BLOCK_M"]), triton.cdiv(N, meta["BLOCK_N"]))
 
     _rms_norm_linear_fwd[grid](

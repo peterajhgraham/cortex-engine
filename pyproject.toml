@@ -139,14 +139,24 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = [
+  "triton",
   "triton.*",
+  "torch",
+  "torch.*",
+  "wandb",
   "wandb.*",
   "pynwb.*",
   "dandi.*",
   "umap.*",
   "sklearn.*",
+  "opentelemetry.instrumentation.*",
+  "opentelemetry.exporter.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "cortex.*"
+disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
 module = "tests.*"

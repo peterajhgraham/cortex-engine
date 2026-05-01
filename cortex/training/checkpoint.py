@@ -16,7 +16,7 @@ Both paths use the same checkpoint_dir layout, so callers don't branch.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.distributed as dist
@@ -33,7 +33,7 @@ _TRAIN_STATE_FILENAME = "train_state.pt"
 
 
 def _is_distributed_run() -> bool:
-    return dist.is_initialized() and dist.get_world_size() > 1
+    return bool(dist.is_initialized() and dist.get_world_size() > 1)
 
 
 def save_checkpoint(
@@ -78,7 +78,7 @@ def load_checkpoint(
         if optimizer is not None and "optim" in ckpt:
             optimizer.load_state_dict(ckpt["optim"])
         log.info("checkpoint_loaded", path=str(path), mode="single")
-        return ckpt.get("state", {})
+        return cast(dict[str, Any], ckpt.get("state", {}))
 
     if (path / _DCP_SUBDIR).exists():
         return _load_dcp(path, model, optimizer)
@@ -163,9 +163,9 @@ def _optimizer_state_dict(model: nn.Module, optimizer: torch.optim.Optimizer) ->
     try:
         from torch.distributed.checkpoint.state_dict import get_optimizer_state_dict
 
-        return get_optimizer_state_dict(model, optimizer)
+        return cast(dict[str, Any], get_optimizer_state_dict(model, optimizer))
     except ImportError:
-        return optimizer.state_dict()
+        return cast(dict[str, Any], optimizer.state_dict())
 
 
 def _restore_optimizer_state(

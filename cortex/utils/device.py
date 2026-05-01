@@ -66,4 +66,4 @@ def _mps_ready() -> bool:
 
 def pin_memory_supported(device: torch.device) -> bool:
     """pin_memory only works for CUDA; MPS and CPU should leave it off."""
-    return device.type == "cuda"
+    return bool(device.type == "cuda")

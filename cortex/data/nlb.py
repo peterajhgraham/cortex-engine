@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -70,7 +70,7 @@ def bucket_values(counts: np.ndarray, n_buckets: int) -> np.ndarray:
     """
     if n_buckets <= 0:
         raise ValueError(f"n_buckets must be positive, got {n_buckets}")
-    return np.clip(counts, 0, n_buckets - 1).astype(np.int64, copy=False)
+    return cast(np.ndarray, np.clip(counts, 0, n_buckets - 1).astype(np.int64, copy=False))
 
 
 def events_from_bin_matrix(
@@ -509,7 +509,7 @@ def _resample_to_bins(
     binned = reshaped.mean(axis=1).astype(np.float32)
 
     if binned.shape[0] >= n_bins:
-        return binned[:n_bins]
+        return cast(np.ndarray, binned[:n_bins])
     pad = np.zeros((n_bins - binned.shape[0], signal.shape[1]), dtype=np.float32)
     return np.concatenate([binned, pad], axis=0)
 

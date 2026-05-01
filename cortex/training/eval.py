@@ -72,59 +72,59 @@ def r2_score_per_dim(y_true: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor
     return torch.where(constant, torch.zeros_like(per_dim), per_dim)
 
 
-@torch.no_grad()
 def evaluate(
     model: nn.Module,
     loader: DataLoader,
     device: torch.device,
 ) -> EvalResults:
     """Run the model over the full loader and compute aggregate metrics."""
-    model.eval()
+    with torch.no_grad():
+        model.eval()
 
-    all_pred: list[torch.Tensor] = []
-    all_true: list[torch.Tensor] = []
-    masked_correct = 0
-    masked_total = 0
+        all_pred: list[torch.Tensor] = []
+        all_true: list[torch.Tensor] = []
+        masked_correct = 0
+        masked_total = 0
 
-    for batch in loader:
-        # Keep behavior labels on CPU — avoids an MPS non_blocking race where
-        # the tensor hasn't committed before we immediately call .cpu().
-        behavior_cpu = batch["behavior"].float()
-        spike_keys = ("neuron_ids", "time_bins", "values", "batch_indices")
-        batch_dev = {k: batch[k].to(device) for k in spike_keys}
-        if "masked_spike_targets" in batch:
-            batch_dev["masked_spike_targets"] = batch["masked_spike_targets"].to(device)
+        for batch in loader:
+            # Keep behavior labels on CPU — avoids an MPS non_blocking race where
+            # the tensor hasn't committed before we immediately call .cpu().
+            behavior_cpu = batch["behavior"].float()
+            spike_keys = ("neuron_ids", "time_bins", "values", "batch_indices")
+            batch_dev = {k: batch[k].to(device) for k in spike_keys}
+            if "masked_spike_targets" in batch:
+                batch_dev["masked_spike_targets"] = batch["masked_spike_targets"].to(device)
 
-        out = model(
-            neuron_ids=batch_dev["neuron_ids"],
-            time_bins=batch_dev["time_bins"],
-            values=batch_dev["values"],
-            batch_indices=batch_dev["batch_indices"],
-            return_aux=True,
+            out = model(
+                neuron_ids=batch_dev["neuron_ids"],
+                time_bins=batch_dev["time_bins"],
+                values=batch_dev["values"],
+                batch_indices=batch_dev["batch_indices"],
+                return_aux=True,
+            )
+            all_pred.append(out["behavior"].float().cpu())
+            all_true.append(behavior_cpu)
+
+            if "masked_spike_logits" in out and "masked_spike_targets" in batch_dev:
+                preds = out["masked_spike_logits"].argmax(dim=-1)
+                masked_correct += int((preds == batch_dev["masked_spike_targets"]).sum().item())
+                masked_total += int(preds.numel())
+
+        y_pred = torch.cat(all_pred)
+        y_true = torch.cat(all_true)
+        r2 = r2_score(y_true, y_pred)
+        mse = float(((y_true - y_pred) ** 2).mean().item())
+
+        spike_acc = masked_correct / masked_total if masked_total > 0 else None
+
+        log.info("eval_complete", r2=r2, mse=mse, n=len(y_true))
+
+        return EvalResults(
+            r2_velocity=r2,
+            mse_velocity=mse,
+            masked_spike_accuracy=spike_acc,
+            n_samples=len(y_true),
         )
-        all_pred.append(out["behavior"].float().cpu())
-        all_true.append(behavior_cpu)
-
-        if "masked_spike_logits" in out and "masked_spike_targets" in batch_dev:
-            preds = out["masked_spike_logits"].argmax(dim=-1)
-            masked_correct += int((preds == batch_dev["masked_spike_targets"]).sum().item())
-            masked_total += int(preds.numel())
-
-    y_pred = torch.cat(all_pred)
-    y_true = torch.cat(all_true)
-    r2 = r2_score(y_true, y_pred)
-    mse = float(((y_true - y_pred) ** 2).mean().item())
-
-    spike_acc = masked_correct / masked_total if masked_total > 0 else None
-
-    log.info("eval_complete", r2=r2, mse=mse, n=len(y_true))
-
-    return EvalResults(
-        r2_velocity=r2,
-        mse_velocity=mse,
-        masked_spike_accuracy=spike_acc,
-        n_samples=len(y_true),
-    )
 
 
 def format_comparison_table(rows: dict[str, float]) -> str:

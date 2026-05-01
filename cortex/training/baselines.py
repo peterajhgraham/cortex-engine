@@ -54,7 +54,6 @@ class WienerFilter(nn.Module):
         """
         return self.linear(x)
 
-    @torch.no_grad()
     def fit_closed_form(self, X: torch.Tensor, Y: torch.Tensor) -> None:
         """Solve the ridge regression in closed form.
 
@@ -64,12 +63,13 @@ class WienerFilter(nn.Module):
             X: (N, n_features)
             Y: (N, behavior_dim)
         """
-        n_features = X.shape[1]
-        XtX = X.T @ X + self.alpha * torch.eye(n_features, device=X.device, dtype=X.dtype)
-        XtY = X.T @ Y
-        W = torch.linalg.solve(XtX, XtY)
-        self.linear.weight.copy_(W.T)
-        self.linear.bias.zero_()
+        with torch.no_grad():
+            n_features = X.shape[1]
+            XtX = X.T @ X + self.alpha * torch.eye(n_features, device=X.device, dtype=X.dtype)
+            XtY = X.T @ Y
+            W = torch.linalg.solve(XtX, XtY)
+            self.linear.weight.copy_(W.T)
+            self.linear.bias.zero_()
 
 
 class GRUDecoder(nn.Module):
@@ -231,7 +231,6 @@ def _stack_loader(loader: Iterable[DenseBatch]) -> tuple[torch.Tensor, torch.Ten
     return torch.cat(feats), torch.cat(targets)
 
 
-@torch.no_grad()
 def fit_wiener(
     train_loader: Iterable[DenseBatch],
     val_loader: Iterable[DenseBatch],
@@ -244,19 +243,20 @@ def fit_wiener(
     Spike windows are flattened to (B, T*N) — that's the canonical Wiener
     feature representation: one weight per (lag, neuron) pair.
     """
-    X_train, Y_train = _stack_loader(train_loader)
-    n_samples, T, N = X_train.shape
-    n_features = T * N
-    X_train_flat = X_train.reshape(n_samples, n_features)
+    with torch.no_grad():
+        X_train, Y_train = _stack_loader(train_loader)
+        n_samples, T, N = X_train.shape
+        n_features = T * N
+        X_train_flat = X_train.reshape(n_samples, n_features)
 
-    model = WienerFilter(n_features=n_features, behavior_dim=behavior_dim, alpha=alpha)
-    model.fit_closed_form(X_train_flat, Y_train)
+        model = WienerFilter(n_features=n_features, behavior_dim=behavior_dim, alpha=alpha)
+        model.fit_closed_form(X_train_flat, Y_train)
 
-    X_val, Y_val = _stack_loader(val_loader)
-    Y_pred = model(X_val.reshape(X_val.shape[0], -1))
-    r2 = r2_score(Y_val, Y_pred)
-    log.info("wiener_baseline_done", r2=r2, n_train=n_samples, n_features=n_features)
-    return model, r2
+        X_val, Y_val = _stack_loader(val_loader)
+        Y_pred = model(X_val.reshape(X_val.shape[0], -1))
+        r2 = r2_score(Y_val, Y_pred)
+        log.info("wiener_baseline_done", r2=r2, n_train=n_samples, n_features=n_features)
+        return model, r2
 
 
 def train_gru(

@@ -25,15 +25,17 @@ from cortex.utils.logging import get_logger
 
 log = get_logger(__name__)
 
+_OTLPExporter: type[Any] | None = None
+_OTLP_AVAILABLE = False
 try:
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-        OTLPSpanExporter as _OTLPExporter,
+        OTLPSpanExporter,
     )
 
+    _OTLPExporter = OTLPSpanExporter
     _OTLP_AVAILABLE = True
 except ImportError:  # package not installed in dev; traces still created locally
-    _OTLP_AVAILABLE = False
-    _OTLPExporter = None  # type: ignore[assignment,misc]
+    pass
 
 
 def configure_tracing(service_name: str = "cortex-engine", endpoint: str | None = None) -> None:
@@ -47,11 +49,11 @@ def configure_tracing(service_name: str = "cortex-engine", endpoint: str | None 
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
 
-    if endpoint and _OTLP_AVAILABLE:
+    if endpoint and _OTLPExporter is not None:
         exporter = _OTLPExporter(endpoint=endpoint, insecure=True)
         provider.add_span_processor(BatchSpanProcessor(exporter))
         log.info("tracing_configured", endpoint=endpoint)
-    elif endpoint and not _OTLP_AVAILABLE:
+    elif endpoint:
         log.warning(
             "tracing_otlp_unavailable",
             detail="opentelemetry-exporter-otlp-proto-grpc not installed; "

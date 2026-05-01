@@ -204,8 +204,8 @@ def build_temporal_block_mask(
 
 if _TRITON_AVAILABLE:
 
-    @triton.jit
-    def _sparse_cross_attn_fwd(
+    @triton.jit  # type: ignore[untyped-decorator]
+    def _sparse_cross_attn_fwd(  # type: ignore[no-untyped-def]
         # Q: (B, H, L, Dh) — row major, stride_qb/qh/ql/qd
         q_ptr,
         stride_qb,

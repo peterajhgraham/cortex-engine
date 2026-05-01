@@ -86,7 +86,7 @@ class CalibrationHook:
         self.stats = ActivationStats()
         self._handle: Any = None
 
-    def __call__(self, module: nn.Module, args: tuple) -> None:
+    def __call__(self, module: nn.Module, args: tuple[Any, ...]) -> None:
         if args:
             self.stats.update(args[0])
 
@@ -201,7 +201,7 @@ class QuantizedLinear(nn.Module):
         if bias is not None:
             self.register_buffer("bias", bias)
         else:
-            self.bias = None  # type: ignore[assignment]
+            self.bias = None
 
     @classmethod
     def from_linear(
@@ -299,7 +299,7 @@ def count_quantized_linears(model: nn.Module) -> tuple[int, int]:
 # ── Save / load ───────────────────────────────────────────────────────────────
 
 
-def save_quantized(model: nn.Module, path: Path, meta: dict | None = None) -> None:
+def save_quantized(model: nn.Module, path: Path, meta: dict[str, Any] | None = None) -> None:
     """Save a quantized model's state dict + metadata.
 
     Format: torch.save({'state_dict': ..., 'meta': ...})
@@ -341,7 +341,7 @@ def load_quantized(path: Path, model: nn.Module) -> nn.Module:
 def calibration_summary(
     hooks: dict[str, CalibrationHook],
     scales: dict[str, LayerScales],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Return a list of per-layer calibration statistics for logging / reporting."""
     rows = []
     for name, hook in hooks.items():

@@ -63,7 +63,9 @@ from __future__ import annotations
 import json
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -88,7 +90,7 @@ from cortex.kernels.fused_rmsnorm import rms_norm_linear, rms_norm_linear_refere
 # ── Timing helpers ────────────────────────────────────────────────────────────
 
 
-def _bench(fn, args: tuple, *, warmup: int = 25, iters: int = 100) -> float:
+def _bench(fn: Callable[..., Any], args: tuple[Any, ...], *, warmup: int = 25, iters: int = 100) -> float:
     """Return median milliseconds per call (CUDA-synchronised)."""
     for _ in range(warmup):
         fn(*args)
@@ -135,9 +137,9 @@ def run(
     dtype: torch.dtype = torch.bfloat16,
     warmup: int = 25,
     iters: int = 100,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     device = "cuda"
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
 
     print(f"\n{'='*80}")
     print(f"  Fused RMSNorm+Linear Benchmark  |  device: {torch.cuda.get_device_name()}")
