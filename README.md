@@ -46,15 +46,14 @@ Three Triton kernels are fully implemented and tested. Benchmark numbers are pen
 | Sparse cross-attention | Skips masked event tiles (O(1 − density) × K/V reads) | Block sparsity + FA2 |
 | Fused RMSNorm + linear | Eliminates x\_norm write + read (saves 2 × M × K bytes) | No HBM round-trip for intermediate |
 
-### Quantization (Phase 2.6 — MPS, Cortex-S)
+### Quantization (Phase 2.6 — MPS, Cortex-S, synthetic data)
 
-| Configuration | Params memory | R² delta vs fp32 | Calibration batches |
+| Configuration | Weight + buffer memory | MSE delta | Max abs output diff |
 |---|---|---|---|
 | float32 baseline | 99.2 MB | — | — |
-| bfloat16 | 49.6 MB | — | — |
-| INT8 (per-channel weights, per-tensor acts) | ~25.0 MB | TBD — run `make calibrate` | 50 |
+| INT8 per-channel weights | **27.8 MB** | +0.0086% | 0.005 |
 
-Memory savings are theoretical (weight storage only); full model memory includes activations and optimizer state. Accuracy delta requires CUDA or longer MPS run to produce stable R² estimates.
+Savings: −71.4 MB (72.0%). 34/35 linear layers quantized (the one exception: `MaskedSpikeHead.proj` is gated by `return_aux=True` and never activates during a standard forward pass, so no calibration data was collected for it). Numbers measured with randomly initialized weights and synthetic spike events — MSE delta is not meaningful for model quality, but output fidelity (max abs diff 0.005) is. Full report: [`benchmarks/quantization/results.md`](benchmarks/quantization/results.md).
 
 ---
 
