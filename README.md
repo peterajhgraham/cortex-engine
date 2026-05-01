@@ -221,8 +221,8 @@ PYTHONPATH=. .venv/bin/python -c "import cortex; print('ok')"
 ### Run all non-GPU tests
 
 ```bash
-PYTHONPATH=. .venv/bin/python -m pytest tests/ -v -k "not gpu"
-# Expected: ~40 passing, a few skipped (CUDA-only paths)
+PYTHONPATH=. .venv/bin/python -m pytest tests/ -q
+# Expected: 116 passed, ~39 skipped (CUDA-only Triton paths)
 ```
 
 ### Profile Cortex-S inference on MPS
