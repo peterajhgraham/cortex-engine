@@ -114,8 +114,12 @@ class InferenceWorker:
 
         # CUDA stream for compute; copy stream for H2D overlap
         if device.type == "cuda":
-            self._compute_stream: torch.cuda.Stream | None = torch.cuda.Stream(device=device)
-            self._copy_stream: torch.cuda.Stream | None = torch.cuda.Stream(device=device)
+            # torch.cuda.Stream is untyped in some torch stub versions; binding
+            # the class through Any avoids no-untyped-call in strict CI stubs
+            # while remaining correct at runtime.
+            _stream_cls: Any = torch.cuda.Stream
+            self._compute_stream: torch.cuda.Stream | None = _stream_cls(device=device)
+            self._copy_stream: torch.cuda.Stream | None = _stream_cls(device=device)
         else:
             self._compute_stream = None
             self._copy_stream = None

@@ -285,10 +285,10 @@ def _replace_linears(
 def model_weight_bytes(model: nn.Module) -> int:
     """Count bytes used by all parameter and buffer tensors in the model."""
     total = 0
-    for t in model.parameters():
-        total += t.numel() * t.element_size()
-    for t in model.buffers():
-        total += t.numel() * t.element_size()
+    for p in model.parameters():
+        total += p.numel() * p.element_size()
+    for buf in model.buffers():
+        total += buf.numel() * buf.element_size()
     return total
 
 

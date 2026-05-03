@@ -166,7 +166,7 @@ class DenseBatch:
     behavior: torch.Tensor
 
 
-class DenseWindowDataset(Dataset[dict[str, torch.Tensor]]):
+class DenseWindowDataset(Dataset[DenseBatch]):
     """Adapter: yields (window_bins, n_neurons) dense spike counts per sample.
 
     Wraps an NLBDataset so the baselines see exactly the same windows as the
@@ -182,7 +182,7 @@ class DenseWindowDataset(Dataset[dict[str, torch.Tensor]]):
     def __len__(self) -> int:
         return len(self.nlb)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> DenseBatch:
         session_idx, start, end = self.nlb._windows[idx]
         session = self.nlb.sessions[session_idx]
         window = session.bin_counts[start:end]  # (T, N_session)
@@ -193,13 +193,13 @@ class DenseWindowDataset(Dataset[dict[str, torch.Tensor]]):
         # Z-score to match NLBDataset normalization so baseline R² is comparable.
         raw = session.behavior[end - 1].astype(np.float32, copy=False)
         behavior = (raw - self.nlb._behavior_mean) / self.nlb._behavior_std
-        return {"features": features, "behavior": torch.from_numpy(behavior)}
+        return DenseBatch(features=features, behavior=torch.from_numpy(behavior))
 
 
-def collate_dense(batch: list[dict[str, torch.Tensor]]) -> DenseBatch:
+def collate_dense(batch: list[DenseBatch]) -> DenseBatch:
     return DenseBatch(
-        features=torch.stack([b["features"] for b in batch]),
-        behavior=torch.stack([b["behavior"] for b in batch]),
+        features=torch.stack([b.features for b in batch]),
+        behavior=torch.stack([b.behavior for b in batch]),
     )
 
 

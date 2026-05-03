@@ -166,7 +166,8 @@ def _optimizer_state_dict(model: nn.Module, optimizer: torch.optim.Optimizer) ->
         result: dict[str, Any] = get_optimizer_state_dict(model, optimizer)
         return result
     except ImportError:
-        return cast(dict[str, Any], optimizer.state_dict())
+        fallback: dict[str, Any] = optimizer.state_dict()
+        return fallback
 
 
 def _restore_optimizer_state(
