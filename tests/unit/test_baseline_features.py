@@ -41,9 +41,9 @@ def test_dense_window_dataset_shapes() -> None:
     nlb = _make_nlb(seed=0)
     dense = DenseWindowDataset(nlb)
     item = dense[0]
-    assert item["features"].shape == (10, 16)
-    assert item["features"].dtype == torch.float32
-    assert item["behavior"].shape == (2,)
+    assert item.features.shape == (10, 16)
+    assert item.features.dtype == torch.float32
+    assert item.behavior.shape == (2,)
 
 
 def test_dense_window_dataset_places_neurons_at_offset() -> None:
@@ -72,8 +72,8 @@ def test_dense_window_dataset_places_neurons_at_offset() -> None:
     for idx in range(len(dense)):
         if nlb._windows[idx][0] == 1:  # session-1 window
             item = dense[idx]
-            assert torch.all(item["features"][:, :n1] == 0)
-            assert item["features"][:, n1:].abs().sum() > 0
+            assert torch.all(item.features[:, :n1] == 0)
+            assert item.features[:, n1:].abs().sum() > 0
             return
     pytest.fail("No session-1 windows in dataset; raise n_bins.")
 
