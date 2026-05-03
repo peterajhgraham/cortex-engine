@@ -74,7 +74,7 @@ def r2_score_per_dim(y_true: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor
 
 def evaluate(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[dict[str, torch.Tensor]],
     device: torch.device,
 ) -> EvalResults:
     """Run the model over the full loader and compute aggregate metrics."""

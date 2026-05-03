@@ -114,8 +114,8 @@ class InferenceWorker:
 
         # CUDA stream for compute; copy stream for H2D overlap
         if device.type == "cuda":
-            self._compute_stream = torch.cuda.Stream(device=device)
-            self._copy_stream = torch.cuda.Stream(device=device)
+            self._compute_stream: torch.cuda.Stream | None = torch.cuda.Stream(device=device)
+            self._copy_stream: torch.cuda.Stream | None = torch.cuda.Stream(device=device)
         else:
             self._compute_stream = None
             self._copy_stream = None
@@ -195,7 +195,7 @@ class InferenceWorker:
             vals = torch.tensor(all_vals, dtype=torch.int64, device=self.device)
             bidx = torch.tensor(all_bidx, dtype=torch.int64, device=self.device)
 
-        if self._copy_stream is not None:
+        if self._copy_stream is not None and self._compute_stream is not None:
             # Wait for H2D before compute
             self._compute_stream.wait_stream(self._copy_stream)
 

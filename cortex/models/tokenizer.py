@@ -28,6 +28,8 @@ Shapes (E = total spike events across the batch):
 
 from __future__ import annotations
 
+from typing import cast
+
 import torch
 from torch import nn
 
@@ -85,4 +87,7 @@ class SpikeTokenizer(nn.Module):
                 values,
             )
 
-        return self.neuron_emb(neuron_ids) + self.time_emb(time_bins) + self.value_emb(values)
+        return cast(
+            torch.Tensor,
+            self.neuron_emb(neuron_ids) + self.time_emb(time_bins) + self.value_emb(values),
+        )

@@ -183,6 +183,9 @@ class QuantizedLinear(nn.Module):
 
     in_features: int
     out_features: int
+    weight_int8: torch.Tensor
+    weight_scale: torch.Tensor
+    bias: torch.Tensor | None
 
     def __init__(
         self,
@@ -201,7 +204,7 @@ class QuantizedLinear(nn.Module):
         if bias is not None:
             self.register_buffer("bias", bias)
         else:
-            self.bias = None
+            self.register_buffer("bias", None)
 
     @classmethod
     def from_linear(

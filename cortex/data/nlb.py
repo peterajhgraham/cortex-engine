@@ -146,7 +146,7 @@ class SessionData:
 # ── Dataset ────────────────────────────────────────────────────────────────────
 
 
-class NLBDataset(Dataset):
+class NLBDataset(Dataset[dict[str, torch.Tensor]]):
     """Sliding-window view over one or more NLB sessions.
 
     The dataset materializes binned spike counts and behavior into RAM on
@@ -296,7 +296,7 @@ def build_dataloaders(
     cfg: Any,
     world_size: int = 1,
     rank: int = 0,
-) -> tuple[DataLoader, DataLoader]:
+) -> tuple[DataLoader[dict[str, torch.Tensor]], DataLoader[dict[str, torch.Tensor]]]:
     """Construct train and val dataloaders. Uses DistributedSampler if world_size > 1."""
     train_ds = NLBDataset(
         data_root=cfg.data_root,
@@ -317,7 +317,7 @@ def build_dataloaders(
         max_neurons=cfg.max_neurons,
     )
 
-    sampler: torch.utils.data.distributed.DistributedSampler | None = None
+    sampler: torch.utils.data.distributed.DistributedSampler[dict[str, torch.Tensor]] | None = None
     if world_size > 1:
         from torch.utils.data.distributed import DistributedSampler
 

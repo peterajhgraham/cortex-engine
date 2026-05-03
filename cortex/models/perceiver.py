@@ -23,6 +23,8 @@ Reference:
 
 from __future__ import annotations
 
+from typing import cast
+
 import torch
 from einops import rearrange
 from torch import nn
@@ -77,7 +79,7 @@ class CrossAttentionBlock(nn.Module):
 
         out = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
         out = rearrange(out, "b h l d -> b l (h d)")
-        return latents + self.out_proj(out)
+        return cast(torch.Tensor, latents + self.out_proj(out))
 
 
 class SelfAttentionBlock(nn.Module):
@@ -153,4 +155,4 @@ class PerceiverEncoder(nn.Module):
         latents = self.cross_attn(latents, tokens, token_mask)
         for block in self.self_attn_blocks:
             latents = block(latents)
-        return self.final_norm(latents)
+        return cast(torch.Tensor, self.final_norm(latents))

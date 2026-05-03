@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import torch
 from torch import nn
 
@@ -48,7 +50,7 @@ class BehaviorDecoder(nn.Module):
         attn = rearrange(attn, "b h l d -> b l (h d)")
 
         # Project each behavioral query to a scalar output
-        return self.out_proj(attn).squeeze(-1)
+        return cast(torch.Tensor, self.out_proj(attn).squeeze(-1))
 
 
 class MaskedSpikeHead(nn.Module):
@@ -64,7 +66,7 @@ class MaskedSpikeHead(nn.Module):
     def forward(self, latents: torch.Tensor) -> torch.Tensor:
         # Pool over latents and predict spike-value distribution
         # In a fuller impl this would be query-conditioned; this is a simple stub
-        return self.proj(latents.mean(dim=1))
+        return cast(torch.Tensor, self.proj(latents.mean(dim=1)))
 
 
 class CortexModel(nn.Module):

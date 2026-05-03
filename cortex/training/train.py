@@ -98,19 +98,19 @@ def maybe_wrap_fsdp(
             "FSDP2 requires torch >= 2.5. Upgrade torch or run on a single GPU."
         ) from e
 
-    mp_policy = (
-        MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32)
-        if enable_mixed_precision
-        else None
-    )
+    fsdp_kwargs: dict[str, Any] = {}
+    if enable_mixed_precision:
+        fsdp_kwargs["mp_policy"] = MixedPrecisionPolicy(
+            param_dtype=torch.bfloat16, reduce_dtype=torch.float32
+        )
 
     # Shard each transformer block first, then the root, so the root's
     # forward sees already-sharded children and can stage all-gathers
     # block-by-block rather than once for the whole model.
     if isinstance(model, CortexModel):
         for block in model.encoder.self_attn_blocks:
-            fully_shard(block, mp_policy=mp_policy)
-    fully_shard(model, mp_policy=mp_policy)
+            fully_shard(block, **fsdp_kwargs)
+    fully_shard(model, **fsdp_kwargs)
     return model
 
 
@@ -201,7 +201,7 @@ def main(cfg: DictConfig) -> None:
         )
 
     # Model + FSDP
-    model = build_model(cfg.model).to(device)
+    model: nn.Module = build_model(cfg.model).to(device)
     model = maybe_wrap_fsdp(model, enable_mixed_precision=cfg.runtime.mixed_precision)
     if cfg.runtime.compile:
         model = cast(nn.Module, torch.compile(model))
@@ -355,7 +355,7 @@ def _init_wandb(cfg: DictConfig) -> Any:
         project=cfg.runtime.wandb_project,
         entity=cfg.runtime.wandb_entity,
         name=cfg.experiment_name,
-        config=OmegaConf.to_container(cfg, resolve=True),
+        config=cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True)),
     )
 
 

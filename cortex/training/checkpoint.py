@@ -143,13 +143,13 @@ def _resolve_dcp_save() -> Any:
     """torch>=2.3 ships dcp.save; older releases used dcp.save_state_dict."""
     from torch.distributed import checkpoint as dcp
 
-    return getattr(dcp, "save", None) or dcp.save_state_dict
+    return getattr(dcp, "save", None) or getattr(dcp, "save_state_dict", None)
 
 
 def _resolve_dcp_load() -> Any:
     from torch.distributed import checkpoint as dcp
 
-    return getattr(dcp, "load", None) or dcp.load_state_dict
+    return getattr(dcp, "load", None) or getattr(dcp, "load_state_dict", None)
 
 
 def _optimizer_state_dict(model: nn.Module, optimizer: torch.optim.Optimizer) -> dict[str, Any]:
@@ -163,7 +163,8 @@ def _optimizer_state_dict(model: nn.Module, optimizer: torch.optim.Optimizer) ->
     try:
         from torch.distributed.checkpoint.state_dict import get_optimizer_state_dict
 
-        return cast(dict[str, Any], get_optimizer_state_dict(model, optimizer))
+        result: dict[str, Any] = get_optimizer_state_dict(model, optimizer)
+        return result
     except ImportError:
         return cast(dict[str, Any], optimizer.state_dict())
 

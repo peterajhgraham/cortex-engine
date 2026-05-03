@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 import torch
@@ -52,7 +53,7 @@ class WienerFilter(nn.Module):
         Returns:
             (B, behavior_dim)
         """
-        return self.linear(x)
+        return cast(torch.Tensor, self.linear(x))
 
     def fit_closed_form(self, X: torch.Tensor, Y: torch.Tensor) -> None:
         """Solve the ridge regression in closed form.
@@ -97,7 +98,7 @@ class GRUDecoder(nn.Module):
             (B, behavior_dim) using the final timestep
         """
         out, _ = self.gru(x)
-        return self.head(out[:, -1])  # use final timestep
+        return cast(torch.Tensor, self.head(out[:, -1]))  # use final timestep
 
 
 class VanillaTransformer(nn.Module):
@@ -147,7 +148,7 @@ class VanillaTransformer(nn.Module):
         h = h + self.pos_emb(pos)
 
         h = self.encoder(h)
-        return self.head(h[:, 0])  # CLS token output
+        return cast(torch.Tensor, self.head(h[:, 0]))  # CLS token output
 
 
 # ── Dense feature extraction ──────────────────────────────────────────────────
@@ -165,7 +166,7 @@ class DenseBatch:
     behavior: torch.Tensor
 
 
-class DenseWindowDataset(Dataset):
+class DenseWindowDataset(Dataset[dict[str, torch.Tensor]]):
     """Adapter: yields (window_bins, n_neurons) dense spike counts per sample.
 
     Wraps an NLBDataset so the baselines see exactly the same windows as the
@@ -207,7 +208,7 @@ def make_dense_loader(
     batch_size: int,
     shuffle: bool = True,
     num_workers: int = 0,
-) -> DataLoader:
+) -> DataLoader[DenseBatch]:
     """Standard DataLoader wrapping the dense adapter."""
     return DataLoader(
         DenseWindowDataset(nlb_dataset),
@@ -279,7 +280,10 @@ def train_gru(
     """
     device = device or torch.device("cpu")
     model = GRUDecoder(n_neurons, hidden_dim, num_layers, behavior_dim).to(device)
-    return _train_dense_model(model, train_loader, val_loader, lr=lr, epochs=epochs, device=device)
+    return cast(
+        tuple[GRUDecoder, float],
+        _train_dense_model(model, train_loader, val_loader, lr=lr, epochs=epochs, device=device),
+    )
 
 
 def train_transformer(
@@ -306,7 +310,10 @@ def train_transformer(
         max_time_bins=max_time_bins,
         behavior_dim=behavior_dim,
     ).to(device)
-    return _train_dense_model(model, train_loader, val_loader, lr=lr, epochs=epochs, device=device)
+    return cast(
+        tuple[VanillaTransformer, float],
+        _train_dense_model(model, train_loader, val_loader, lr=lr, epochs=epochs, device=device),
+    )
 
 
 def _train_dense_model(
