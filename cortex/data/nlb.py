@@ -19,7 +19,7 @@ Two evaluation modes
 - Trial-aligned (TrialAlignedDataset): extracts a fixed window around each
   trial's move_onset_time using the NWB trials table. Every sample contains
   actual movement. This reproduces the published NLB evaluation protocol and
-  yields R² in the 0.3–0.6 range for the Wiener filter baseline.
+  yields R² in the 0.3-0.6 range for the Wiener filter baseline.
 
 References:
     Pei et al. 2021, "Neural Latents Benchmark '21"
@@ -349,13 +349,11 @@ class TrialAlignedDataset(Dataset[dict[str, torch.Tensor]]):
             if nwb.trials is None:
                 raise ValueError(f"NWB file {nwb_path} has no trials table")
             trials_df = nwb.trials.to_dataframe()
-            bin_counts, _behavior_binned, t0_s, vel_timestamps = (
-                _extract_session_arrays_with_t0(nwb, bin_size_ms)
+            bin_counts, _behavior_binned, t0_s, vel_timestamps = _extract_session_arrays_with_t0(
+                nwb, bin_size_ms
             )
             if len(vel_timestamps) > 0:
-                vel_data = np.asarray(
-                    nwb.processing["behavior"]["hand_vel"].data, dtype=np.float32
-                )
+                vel_data = np.asarray(nwb.processing["behavior"]["hand_vel"].data, dtype=np.float32)
             else:
                 vel_data = np.zeros((0, 2), dtype=np.float32)
             units_df = nwb.units.to_dataframe()
