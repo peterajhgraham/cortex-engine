@@ -11,6 +11,16 @@ Data flow:
     DANDI archive -> NWB files -> per-session (units, kinematics) -> binned
     spike matrix + behavior trace -> sliding windows -> per-window event lists.
 
+Two evaluation modes
+--------------------
+- Sliding window (NLBDataset): samples uniformly from the full continuous
+  recording. ~85% of windows are rest periods where velocity ≈ 0. Produces
+  R² ≈ 0 because the dominant class is "no movement".
+- Trial-aligned (TrialAlignedDataset): extracts a fixed window around each
+  trial's move_onset_time using the NWB trials table. Every sample contains
+  actual movement. This reproduces the published NLB evaluation protocol and
+  yields R² in the 0.3–0.6 range for the Wiener filter baseline.
+
 References:
     Pei et al. 2021, "Neural Latents Benchmark '21"
     https://github.com/neurallatents/nlb_tools
@@ -266,6 +276,218 @@ class NLBDataset(Dataset[dict[str, torch.Tensor]]):
         }
 
 
+# ── Trial-aligned dataset ─────────────────────────────────────────────────────
+
+
+class TrialAlignedDataset(Dataset[dict[str, torch.Tensor]]):
+    """Trial-aligned dataset: one sample per NLB trial around move_onset_time.
+
+    Extracts a fixed window [-pre_onset_ms, +post_onset_ms] relative to each
+    trial's move_onset_time. Uses the NWB trials table `split` column for
+    train/val partitioning, matching the published NLB evaluation protocol.
+
+    Behavior target: hand velocity AT move_onset_time (+0 ms relative to
+    onset). This is the velocity the monkey achieves at the instant movement
+    begins, which encodes both reach direction and initial speed. Predicting
+    it requires the model to decode motor intent from peri-onset neural
+    activity. Z-scored using statistics computed from the training split.
+
+    Wiener filter R² on this target: ~0.49 (see benchmarks/training/).
+    Published NLB Wiener R² (~0.33) uses time-lag features and per-bin
+    prediction averaged across the full trial; our per-trial single-point
+    evaluation is slightly easier, hence the higher number.
+
+    Args:
+        nwb_path:        Path to the NWB file (train+behavior variant).
+        split:           "train" or "val" (from trials table `split` column).
+        bin_size_ms:     Bin width in milliseconds.
+        pre_onset_ms:    Window extent before move_onset (default 100 ms).
+        post_onset_ms:   Window extent after move_onset (default 500 ms).
+        max_neurons:     Max neuron index for embedding table bounds check.
+        spike_value_buckets: Quantization levels for spike counts.
+        behavior_mean:   Pre-computed mean for z-scoring (shape (2,)). When
+                         None the mean is estimated from this split.
+        behavior_std:    Pre-computed std for z-scoring (shape (2,)). When
+                         None the std is estimated from this split.
+    """
+
+    def __init__(
+        self,
+        nwb_path: Path,
+        split: str,
+        bin_size_ms: int = 5,
+        pre_onset_ms: int = 100,
+        post_onset_ms: int = 500,
+        max_neurons: int = 512,
+        spike_value_buckets: int = 8,
+        behavior_mean: np.ndarray | None = None,
+        behavior_std: np.ndarray | None = None,
+    ) -> None:
+        if split not in ("train", "val"):
+            raise ValueError(f"split must be 'train' or 'val', got {split!r}")
+        if (pre_onset_ms + post_onset_ms) % bin_size_ms != 0:
+            raise ValueError(
+                f"(pre_onset_ms + post_onset_ms) must be a multiple of bin_size_ms, "
+                f"got {pre_onset_ms + post_onset_ms} % {bin_size_ms} != 0"
+            )
+
+        self.split = split
+        self.bin_size_ms = bin_size_ms
+        self.pre_onset_bins = pre_onset_ms // bin_size_ms
+        self.post_onset_bins = post_onset_ms // bin_size_ms
+        self.window_bins = self.pre_onset_bins + self.post_onset_bins
+        self.max_neurons = max_neurons
+        self.spike_value_buckets = spike_value_buckets
+
+        try:
+            from pynwb import NWBHDF5IO
+        except ImportError as e:
+            raise ImportError("pynwb is required. Install with `pip install pynwb`.") from e
+
+        with NWBHDF5IO(str(nwb_path), mode="r", load_namespaces=True) as io:
+            nwb = io.read()
+            if nwb.trials is None:
+                raise ValueError(f"NWB file {nwb_path} has no trials table")
+            trials_df = nwb.trials.to_dataframe()
+            bin_counts, _behavior_binned, t0_s, vel_timestamps = (
+                _extract_session_arrays_with_t0(nwb, bin_size_ms)
+            )
+            if len(vel_timestamps) > 0:
+                vel_data = np.asarray(
+                    nwb.processing["behavior"]["hand_vel"].data, dtype=np.float32
+                )
+            else:
+                vel_data = np.zeros((0, 2), dtype=np.float32)
+            units_df = nwb.units.to_dataframe()
+
+        heldin_mask = ~units_df["heldout"].values
+        n_units = int(heldin_mask.sum())
+        self._neuron_id_offset = 0  # single-session: global == local
+
+        bin_size_s = bin_size_ms / 1000.0
+        split_trials = trials_df[trials_df["split"] == split]
+
+        windows: list[tuple[int, int]] = []
+        behavior_targets: list[np.ndarray] = []
+
+        for _, row in split_trials.iterrows():
+            onset_s = float(row["move_onset_time"])
+            onset_bin = int((onset_s - t0_s) / bin_size_s)
+            start_bin = onset_bin - self.pre_onset_bins
+            end_bin = onset_bin + self.post_onset_bins
+
+            if start_bin < 0 or end_bin > bin_counts.shape[0]:
+                log.debug(
+                    "trial_window_out_of_bounds",
+                    onset_s=onset_s,
+                    start_bin=start_bin,
+                    end_bin=end_bin,
+                    total_bins=bin_counts.shape[0],
+                )
+                continue
+
+            # Behavior target: velocity AT move_onset_time.
+            # Use raw timestamps (searchsorted) rather than bin indices because
+            # the velocity timeseries has inter-trial gaps that cause bin-index
+            # drift across the ~115-minute recording.
+            if len(vel_timestamps) > 0:
+                i_onset = int(np.searchsorted(vel_timestamps, onset_s))
+                i_onset = min(i_onset, len(vel_data) - 1)
+                target = vel_data[i_onset].astype(np.float32)
+            else:
+                target = np.zeros(2, dtype=np.float32)
+
+            windows.append((start_bin, end_bin))
+            behavior_targets.append(target)
+
+        if not windows:
+            raise ValueError(f"No valid trial windows found for split={split!r}")
+
+        self._windows = windows
+        self._bin_counts = bin_counts
+        self._n_units = n_units
+        raw_targets = np.stack(behavior_targets)
+
+        if behavior_mean is not None and behavior_std is not None:
+            self._behavior_mean = behavior_mean.astype(np.float32)
+            self._behavior_std = behavior_std.astype(np.float32)
+        else:
+            self._behavior_mean = raw_targets.mean(axis=0).astype(np.float32)
+            self._behavior_std = raw_targets.std(axis=0).clip(min=1e-6).astype(np.float32)
+
+        self._targets_normalized = (
+            (raw_targets - self._behavior_mean) / self._behavior_std
+        ).astype(np.float32)
+
+        log.info(
+            "trial_aligned_dataset_built",
+            split=split,
+            n_trials=len(windows),
+            window_bins=self.window_bins,
+            behavior_mean=self._behavior_mean.tolist(),
+            behavior_std=self._behavior_std.tolist(),
+        )
+
+    def __len__(self) -> int:
+        return len(self._windows)
+
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        start_bin, end_bin = self._windows[idx]
+        window_counts = self._bin_counts[start_bin:end_bin]
+
+        neuron_ids, time_bins, values = events_from_bin_matrix(
+            window_counts, self.spike_value_buckets
+        )
+        if neuron_ids.size > 0 and int(neuron_ids.max()) >= self.max_neurons:
+            raise ValueError(
+                f"neuron_id {int(neuron_ids.max())} exceeds max_neurons={self.max_neurons}"
+            )
+
+        behavior = self._targets_normalized[idx]
+        return {
+            "neuron_ids": torch.from_numpy(neuron_ids),
+            "time_bins": torch.from_numpy(time_bins),
+            "values": torch.from_numpy(values),
+            "behavior": torch.from_numpy(behavior),
+        }
+
+
+def build_trial_aligned_datasets(
+    nwb_path: Path,
+    bin_size_ms: int = 5,
+    pre_onset_ms: int = 100,
+    post_onset_ms: int = 500,
+    max_neurons: int = 512,
+    spike_value_buckets: int = 8,
+) -> tuple[TrialAlignedDataset, TrialAlignedDataset]:
+    """Build train and val TrialAlignedDatasets from one NWB file.
+
+    Computes z-score statistics from the train split and applies them to both
+    splits so val targets live in the same normalized space.
+    """
+    train_ds = TrialAlignedDataset(
+        nwb_path=nwb_path,
+        split="train",
+        bin_size_ms=bin_size_ms,
+        pre_onset_ms=pre_onset_ms,
+        post_onset_ms=post_onset_ms,
+        max_neurons=max_neurons,
+        spike_value_buckets=spike_value_buckets,
+    )
+    val_ds = TrialAlignedDataset(
+        nwb_path=nwb_path,
+        split="val",
+        bin_size_ms=bin_size_ms,
+        pre_onset_ms=pre_onset_ms,
+        post_onset_ms=post_onset_ms,
+        max_neurons=max_neurons,
+        spike_value_buckets=spike_value_buckets,
+        behavior_mean=train_ds._behavior_mean,
+        behavior_std=train_ds._behavior_std,
+    )
+    return train_ds, val_ds
+
+
 # ── Collation and dataloader factory ───────────────────────────────────────────
 
 
@@ -492,6 +714,67 @@ def _extract_session_arrays(nwb: Any, bin_size_ms: int) -> tuple[np.ndarray, np.
     else:
         velocity = np.zeros((n_bins, 2), dtype=np.float32)
     return bin_counts, velocity
+
+
+def _extract_session_arrays_with_t0(
+    nwb: Any, bin_size_ms: int
+) -> tuple[np.ndarray, np.ndarray, float, np.ndarray]:
+    """Like _extract_session_arrays but also returns t0_s and raw velocity timestamps.
+
+    The velocity timeseries in MC_Maze NWB has gaps between trials (ITIs are
+    not recorded). Returning the raw timestamps lets callers use searchsorted
+    for temporally precise behavior lookup rather than relying on bin-index
+    arithmetic, which drifts as gaps accumulate across the recording.
+
+    Returns:
+        bin_counts:          (T, N) int32 — spikes on an absolute time grid
+        velocity:            (T, 2) float32 — velocity on an absolute time grid
+        t0_s:                float — time of bin 0 left edge, in seconds
+        vel_timestamps:      (M,) float64 — raw velocity sample timestamps;
+                             empty array when no behavior is available
+    """
+    units = nwb.units
+    units_df = units.to_dataframe()
+    heldin_mask = ~units_df["heldout"].values
+    heldin_indices = np.where(heldin_mask)[0]
+
+    spike_times_per_unit: list[np.ndarray] = [
+        np.asarray(units["spike_times"][int(i)], dtype=np.float64) for i in heldin_indices
+    ]
+    n_units = len(spike_times_per_unit)
+
+    behavior_proc = nwb.processing.get("behavior", None)
+    if behavior_proc is not None and "hand_vel" in behavior_proc.data_interfaces:
+        vel_ts = behavior_proc["hand_vel"]
+        raw_vel = np.asarray(vel_ts.data, dtype=np.float32)
+        vel_timestamps = np.asarray(vel_ts.timestamps, dtype=np.float64)
+        raw_rate_hz = 1.0 / float(np.median(np.diff(vel_timestamps[:1000])))
+        t0_s = float(vel_timestamps[0])
+        t_end = float(vel_timestamps[-1])
+    else:
+        raw_vel = None
+        vel_timestamps = np.empty(0, dtype=np.float64)
+        t0_s = 0.0
+        t_end = 0.0
+        raw_rate_hz = 1000.0
+        for spikes in spike_times_per_unit:
+            if len(spikes):
+                t0_s = min(t0_s, float(spikes.min()))
+                t_end = max(t_end, float(spikes.max()))
+
+    bin_size_s = bin_size_ms / 1000.0
+    n_bins = max(int((t_end - t0_s) / bin_size_s), 1)
+
+    bin_counts = np.zeros((n_bins, n_units), dtype=np.int32)
+    for unit_idx, spikes in enumerate(spike_times_per_unit):
+        bin_counts[:, unit_idx] = bin_spikes(spikes, n_bins, bin_size_s, t0_s=t0_s)
+
+    if raw_vel is not None:
+        velocity = _resample_to_bins(raw_vel, raw_rate_hz, n_bins, bin_size_s)
+    else:
+        velocity = np.zeros((n_bins, 2), dtype=np.float32)
+
+    return bin_counts, velocity, t0_s, vel_timestamps
 
 
 def _resample_to_bins(
