@@ -75,9 +75,9 @@ p99 < 30ms SLO requires CUDA — a batch-of-32 Cortex-S forward pass on an A100 
 ## Architecture
 
 ```
-Spike Events (neuron_id, time_bin, value)
-    │
-    ▼
+   Spike Events (neuron_id, time_bin, value)
+                     │
+                     ▼
 ┌─────────────────────────────────────────────┐
 │  SpikeTokenizer                             │
 │  Fused gather: n_emb[nid] + t_emb[tb] +    │
