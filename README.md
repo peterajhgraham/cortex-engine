@@ -1,10 +1,12 @@
 # Cortex-Engine
 
-![Python](https://img.shields.io/badge/python-3.11+-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
 ![Triton](https://img.shields.io/badge/Triton-red?style=for-the-badge)
-![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
+
+
 [![CI](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml)
+
 
 Production inference infrastructure for transformer-based neural decoders. Three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires CUDA.
 
