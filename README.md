@@ -76,30 +76,30 @@ p99 < 30ms SLO requires CUDA — a batch-of-32 Cortex-S forward pass on an A100 
 
 ```
    Spike Events (neuron_id, time_bin, value)
-                     │
-                     ▼
+                       │
+                       ▼
 ┌─────────────────────────────────────────────┐
 │  SpikeTokenizer                             │
 │  Fused gather: n_emb[nid] + t_emb[tb] +    │
 │  v_emb[val]  → (E, D) tokens               │
 │  [Triton kernel: Phase 2.2]                 │
-└────────────────────┬────────────────────────┘
-                     │ (E, D) flat tokens
-                     ▼
+└──────────────────────┬──────────────────────┘
+                       │ (E, D) flat tokens
+                       ▼
 ┌─────────────────────────────────────────────┐
 │  Perceiver Cross-Attention                  │
 │  Latent queries (L, D) × Spike keys/values  │
 │  [Block-sparse Triton kernel: Phase 2.2]    │
-└────────────────────┬────────────────────────┘
-                     │ (B, L, D) latents
-                     ▼
+└──────────────────────┬──────────────────────┘
+                       │ (B, L, D) latents
+                       ▼
 ┌─────────────────────────────────────────────┐
 │  Self-Attention Stack (N layers)            │
 │  RMSNorm → QKV → SDPA → MLP                │
 │  [Fused RMSNorm+linear kernel: Phase 2.2]   │
-└────────────────────┬────────────────────────┘
-                     │ (B, L, D) latents
-                     ▼
+└──────────────────────┬──────────────────────┘
+                       │ (B, L, D) latents
+                       ▼
 ┌─────────────────────────────────────────────┐
 │  Decoder Heads                              │
 │  Behavior: cross-attn → scalar per dim      │
