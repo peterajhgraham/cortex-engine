@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 [![CI](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml)
 
-Brain-computer interfaces need sub-30ms decoding latency at the system level — not a Jupyter notebook, a deployed service. Cortex-Engine is a ground-up build of that production infrastructure: three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/); the Wiener filter baseline achieves R² = 0.48 on held-out movement trials and a trained Cortex-S should exceed that. On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires CUDA.
+Production inference infrastructure for transformer-based neural decoders. Three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires CUDA.
 
 ---
 
@@ -128,7 +128,7 @@ Spike Events (neuron_id, time_bin, value)
 
 ### Phase 2.6 — INT8 Quantization ✓
 
-- **Per-channel calibration:** Activation scales use 99th-percentile abs-max across calibration batches (more robust than raw max). Weight scales: absmax per output neuron.
+- **Per-channel calibration:** Activation scales use 99th-percentile abs-max across calibration batches. Weight scales: absmax per output neuron.
 - **`QuantizedLinear`:** Stores INT8 weights + float32 scales; dequantizes to bf16 before matmul — device-agnostic, no quantized CUDA kernel dependency.
 
 ### Phase 3 — Inference Engine ✓
@@ -151,20 +151,20 @@ Spike Events (neuron_id, time_bin, value)
 
 ## Tech Stack
 
-| Tool | Why |
+| Tool | Role |
 |---|---|
-| **PyTorch 2.2+** | FSDP2 API, `scaled_dot_product_attention` → FlashAttention dispatch, MPS backend for dev on Apple Silicon. |
-| **Triton** | Custom GPU kernels in Python without CUDA C; generates PTX directly. CUDA-only — no MPS support. |
-| **einops** | Explicit tensor reshapes (`rearrange`) that read like dimension names, not `.view()` chains. |
-| **Hydra** | Hierarchical config composition with CLI overrides; no argparse sprawl as config surface grows. |
-| **Pydantic v2** | Strict typed config and I/O schemas; `model_validator` enforces cross-field constraints at construction. |
-| **pynwb / DANDI** | NLB data is NWB-native; no format conversion needed. |
-| **W&B** | Experiment tracking with offline mode; `wandb sync` to upload when back on network. |
+| **PyTorch 2.2+** | FSDP2, `scaled_dot_product_attention` → FlashAttention dispatch, MPS backend for dev on Apple Silicon. |
+| **Triton** | Custom GPU kernels in Python; generates PTX directly. CUDA-only. |
+| **einops** | Readable tensor reshapes — `rearrange` instead of chains of `.view()`. |
+| **Hydra** | Hierarchical config composition with CLI overrides. |
+| **Pydantic v2** | Typed config and I/O schemas; `model_validator` for cross-field constraints. |
+| **pynwb / DANDI** | NLB data is NWB-native; no conversion step needed. |
+| **W&B** | Experiment tracking with offline mode; `wandb sync` to upload later. |
 | **pytest** | Unit + integration tests; `@pytest.mark.gpu` skips CUDA-only paths on non-CUDA hardware. |
-| **mypy (strict)** | Strict type checking; catches shape bugs before runtime. `py.typed` marker in package. |
+| **mypy (strict)** | Catches shape bugs before runtime. `py.typed` marker in package. |
 | **ruff + black** | Linting and formatting enforced by pre-commit hooks. |
 | **FastAPI** | Async inference server; WebSocket streaming and REST batch endpoints. |
-| **structlog** | Structured JSON logging throughout `cortex/`; no bare `print()` in library code. |
+| **structlog** | Structured JSON logging throughout `cortex/`. |
 
 ---
 
@@ -289,7 +289,7 @@ make docker-up            # docker compose up -d
 docker compose -f ops/docker/docker-compose.yml --profile loadtest run loadgen
 ```
 
-On a CPU-only machine (Mac / CI — no NVIDIA GPU):
+On a CPU-only machine (Mac / CI):
 
 ```bash
 docker compose \
@@ -302,11 +302,11 @@ docker compose \
 
 Three dashboards are auto-provisioned at startup (Grafana → Dashboards → Cortex):
 
-**Traffic dashboard** (`cortex-traffic`) — request rate by endpoint, error rate by type, queue depth, Little's Law in-flight estimate. After `make docker-up` + a few seconds of load, you see a steady ~100 req/s rate line on the top-left panel and near-zero error rate on the top-right. Queue depth stays at 0–2 under normal conditions.
+**Traffic** (`cortex-traffic`) — request rate by endpoint, error rate by type, queue depth, Little's Law in-flight estimate.
 
-**Latency dashboard** (`cortex-latency`) — p50/p95/p99/p99.9 end-to-end latency time series with 30 ms / 50 ms warning/critical thresholds highlighted. Bottom-left SLO burn gauge reads < 1× (green) during normal operation and spikes to red when the k6 ramping scenario saturates the server. Batch-size heatmap shows the continuous batching coalescing requests into batches of 16–32.
+**Latency** (`cortex-latency`) — p50/p95/p99/p99.9 time series with 30 ms / 50 ms thresholds. SLO burn gauge spikes red when the k6 ramping scenario saturates the server. Batch-size heatmap shows continuous batching coalescing requests into batches of 16–32.
 
-**Resources dashboard** (`cortex-resources`) — GPU memory used (bytes), GPU utilization % with green (60%) / yellow (85%) / red (95%) bands, KV cache pages used (climbs during streaming sessions, drops on LRU eviction), KV cache hit rate (green above 80% — exploiting the 91.6% sliding-window overlap).
+**Resources** (`cortex-resources`) — GPU memory and utilization, KV cache pages and hit rate. Hit rate should stay above 80% during streaming sessions given the 91.6% sliding-window overlap.
 
 ---
 
