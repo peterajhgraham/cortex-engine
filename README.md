@@ -80,8 +80,8 @@ p99 < 30ms SLO requires CUDA — a batch-of-32 Cortex-S forward pass on an A100 
                      ▼
 ┌─────────────────────────────────────────────┐
 │  SpikeTokenizer                             │
-│  Fused gather: n_emb[nid] + t_emb[tb] +    │
-│  v_emb[val]  → (E, D) tokens               │
+│  Fused gather: n_emb[nid] + t_emb[tb] +     │
+│  v_emb[val]  → (E, D) tokens                │
 │  [Triton kernel: Phase 2.2]                 │
 └────────────────────┬────────────────────────┘
                      │ (E, D) flat tokens
@@ -95,7 +95,7 @@ p99 < 30ms SLO requires CUDA — a batch-of-32 Cortex-S forward pass on an A100 
                      ▼
 ┌─────────────────────────────────────────────┐
 │  Self-Attention Stack (N layers)            │
-│  RMSNorm → QKV → SDPA → MLP                │
+│  RMSNorm → QKV → SDPA → MLP                 │
 │  [Fused RMSNorm+linear kernel: Phase 2.2]   │
 └────────────────────┬────────────────────────┘
                      │ (B, L, D) latents
