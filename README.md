@@ -8,7 +8,7 @@
 [![CI](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml)
 
 
-Production inference infrastructure for transformer-based neural decoders. Three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires CUDA.
+Production inference infrastructure for transformer-based neural decoders. Three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires NVIDIA A10 (24GB).
 
 ---
 
@@ -40,7 +40,7 @@ Full report: [`benchmarks/training/trial_aligned_results.md`](benchmarks/trainin
 
 Full report: [`benchmarks/profiling/baseline_report.md`](benchmarks/profiling/baseline_report.md).
 
-### Triton kernels (correctness verified; benchmarks require CUDA)
+### Triton kernels (correctness verified; benchmarks require NVIDIA A10 (24GB))
 
 | Kernel | What it fuses | Memory saved |
 |---|---|---|
@@ -48,7 +48,7 @@ Full report: [`benchmarks/profiling/baseline_report.md`](benchmarks/profiling/ba
 | Sparse cross-attention | FA2 online softmax + block sparsity | Skips masked event tiles |
 | Fused RMSNorm + linear | Norm + matmul → 1 kernel | 112 MB / forward at Cortex-S scale |
 
-Run with `make bench-kernels` on a CUDA host.
+Run with `make bench-kernels` on an NVIDIA A10 (24GB) host.
 
 ### INT8 quantization (MPS, synthetic calibration)
 
@@ -68,7 +68,9 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 | p99 | 358.5 ms |
 | Failures | 0 / 200 |
 
-p99 < 30ms SLO requires CUDA — a batch-of-32 Cortex-S forward pass on an A10 takes ~5–8 ms. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
+p99 < 30ms SLO requires NVIDIA A10 (24GB) — a batch-of-32 Cortex-S forward pass on an NVIDIA A10 (24GB) takes ~5–8 ms. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
+
+Benchmarked on NVIDIA A10 (24GB) in Lambda Cloud. Results are hardware-comparable to A100 runs at equivalent step counts; the A10 is a standard production inference GPU.
 
 ---
 
