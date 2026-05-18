@@ -116,7 +116,7 @@ The maximum possible improvement from this kernel is bounded by the 10.5% sectio
 less than 5% of inference time."*
 
 The fused tokenizer kernel is scheduled in Phase 2.1 for **infrastructure and CUDA-at-scale
-reasons** — not because the profiling justifies it on MPS. On an A100 with batch=256 and 2,000+
+reasons** — not because the profiling justifies it on MPS. On an A10 with batch=256 and 2,000+
 events/sample, the three independent embedding lookups become memory-bandwidth-bound at a scale
 that warrants fusion. The benchmark will report this honestly: the kernel may produce <1 ms
 improvement on MPS at batch=32.

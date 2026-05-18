@@ -60,7 +60,7 @@ The NWB trials table contains 2,295 centre-out reach trials with a `split` colum
 
 ## MPS Caveats
 
-1. **Step time on MPS vs A100**: 563 ms/step on M4 Pro vs estimated ~20 ms on A100 (28× slower). 2,000 steps at 32 batch × 120 bins sufficed to confirm convergence behaviour but not to reach a well-trained checkpoint.
+1. **Step time on MPS vs A10**: 563 ms/step on M4 Pro vs estimated ~50 ms on A10 (11× slower). 2,000 steps at 32 batch × 120 bins sufficed to confirm convergence behaviour but not to reach a well-trained checkpoint.
 2. **`non_blocking=True` bug**: MPS does not complete async `.to()` transfers before the next `.cpu()` call on the same stream. All evaluations use synchronous transfers (`non_blocking=False`).
 3. **`pin_memory=False`**: MPS does not support pinned memory; `DataLoader` must be configured accordingly.
 4. **p99 step time**: 3,465 ms (includes occasional GC / memory pressure spikes). Median and p50 are much tighter around 560 ms.
@@ -83,7 +83,7 @@ For a full training run targeting convergence, run on CUDA hardware:
 ```bash
 make train-s   # invokes scripts/train_benchmark.py --max-steps 2000 --device auto
 ```
-Expect ~40 min on a single A100 for 2,000 steps at batch 32. Increase `--max-steps` to 20,000 for a fully converged Cortex-S checkpoint.
+Expect ~2 min on a single A10 for 2,000 steps at batch 32. Increase `--max-steps` to 20,000 for a fully converged Cortex-S checkpoint.
 
 ---
 

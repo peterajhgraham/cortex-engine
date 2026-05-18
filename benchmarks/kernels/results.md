@@ -5,7 +5,7 @@
 
 ## Hardware
 
-TBD (e.g., A100-80GB)
+A10-24GB
 
 ## Fused Spike Tokenizer
 

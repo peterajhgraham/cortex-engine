@@ -68,7 +68,7 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 | p99 | 358.5 ms |
 | Failures | 0 / 200 |
 
-p99 < 30ms SLO requires CUDA — a batch-of-32 Cortex-S forward pass on an A100 takes ~2–3 ms. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
+p99 < 30ms SLO requires CUDA — a batch-of-32 Cortex-S forward pass on an A10 takes ~5–8 ms. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
 
 ---
 
@@ -206,7 +206,7 @@ from cortex.data.nlb import download_mc_maze
 download_mc_maze('data/mc_maze')
 "
 
-# Train (MPS, 2000 steps, ~20 min on M4 Pro):
+# Train (CUDA, 2000 steps, ~2 min on A10 24 GB PCIe):
 make train-s
 # or directly:
 PYTHONPATH=. .venv/bin/python scripts/train_benchmark.py \

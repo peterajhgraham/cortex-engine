@@ -1,6 +1,6 @@
 # Cortex-Engine: A Real-Time Neural Decoding Inference System
 
-> Built from the GPU kernels up. Custom Triton ops. FSDP training. INT8 quantization with calibration. Continuous batching inference engine. Sub-30ms p99 latency on a single A100. Full observability. The kind of infrastructure that LLM serving teams build, applied to an architecture where the systems problems are arguably harder.
+> Built from the GPU kernels up. Custom Triton ops. FSDP training. INT8 quantization with calibration. Continuous batching inference engine. Sub-30ms p99 latency on a single A10. Full observability. The kind of infrastructure that LLM serving teams build, applied to an architecture where the systems problems are arguably harder.
 
 ---
 
