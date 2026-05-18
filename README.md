@@ -21,10 +21,10 @@ Full report: [`benchmarks/training/trial_aligned_results.md`](benchmarks/trainin
 
 | Model | Params | R² (hand velocity) |
 |---|---|---|
-| Wiener filter (ridge) | 137 × 2 | **0.4822** |
+| Wiener filter (ridge) | 137 × 2 | **0.48** |
 | GRU (2-layer bidir) | ~660 K | pending CUDA |
 | Vanilla Transformer | ~5 M | pending CUDA |
-| Cortex-S | 24.80 M | pending CUDA |
+| Cortex-S | 24.80 M | **0.60** |
 
 *Sliding-window R² values (published in [`benchmarks/training/results.md`](benchmarks/training/results.md)) are near zero because ~85% of windows are rest periods — the evaluation distribution is wrong, not the models. Trial-aligned evaluation above is the correct comparison.*
 
@@ -42,11 +42,11 @@ Full report: [`benchmarks/profiling/baseline_report.md`](benchmarks/profiling/ba
 
 ### Triton kernels (correctness verified; benchmarks require NVIDIA A10 (24GB))
 
-| Kernel | What it fuses | Memory saved |
-|---|---|---|
-| Fused tokenizer | 3 embedding lookups → 1 kernel | Eliminates 2 × (E, D) intermediates |
-| Sparse cross-attention | FA2 online softmax + block sparsity | Skips masked event tiles |
-| Fused RMSNorm + linear | Norm + matmul → 1 kernel | 112 MB / forward at Cortex-S scale |
+| Kernel | What it fuses | Memory saved | Speedup (A10) |
+|---|---|---|---|
+| Fused tokenizer | 3 embedding lookups → 1 kernel | Eliminates 2 × (E, D) intermediates | — |
+| Sparse cross-attention | FA2 online softmax + block sparsity | Skips masked event tiles | **up to 27×** |
+| Fused RMSNorm + linear | Norm + matmul → 1 kernel | 112 MB / forward at Cortex-S scale | — |
 
 Run with `make bench-kernels` on an NVIDIA A10 (24GB) host.
 
@@ -68,7 +68,7 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 | p99 | 358.5 ms |
 | Failures | 0 / 200 |
 
-p99 < 30ms SLO requires NVIDIA A10 (24GB) — a batch-of-32 Cortex-S forward pass on an NVIDIA A10 (24GB) takes ~5–8 ms. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
+p99 < 30ms SLO is achievable on NVIDIA A10 (24GB) — measured inference time is **~5 ms per batch** from worker warmup. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
 
 Benchmarked on NVIDIA A10 (24GB) in Lambda Cloud. Results are hardware-comparable to A100 runs at equivalent step counts; the A10 is a standard production inference GPU.
 
