@@ -60,10 +60,10 @@ Script: ops/k6/load_test.js
 Target: http://cortex-engine:8080/decode (containerised FastAPI + uvicorn)
 Scenarios: constant_load (100 req/s × 60 s) + ramping_load (50→1000 req/s)
 
-**Hardware note:** Docker is not available on the development machine (Apple M4
-Pro). The k6 results below are the expected values derived from the in-process
+**Hardware note:** The k6 results below are expected values derived from the in-process
 Phase 3 measurements corrected for HTTP + JSON serialization overhead (~3–5 ms
-per request measured via `curl` timing on MPS).
+per request). Full end-to-end validation requires running `make docker-up && make bench-serving`
+on the A10 host.
 
 | Scenario | Target rate | Actual rate | p50 | p99 | Error rate |
 |---|---|---|---|---|---|

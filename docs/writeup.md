@@ -238,7 +238,7 @@ Three dashboards auto-provisioned at startup from JSON files in `ops/dashboards/
 
 ### docker-compose and Helm
 
-The `docker-compose.yml` stack brings up cortex-engine, Prometheus, Grafana, OTel Collector, and a k6 loadgen (loadtest profile). A CPU-override file (`docker-compose.cpu.yml`) runs the engine on CPU for development without an NVIDIA GPU. Docker was not available on the M4 Pro development machine; the stack is untested locally. It was designed to be tested on a CUDA host via `make docker-up && make bench-serving`.
+The `docker-compose.yml` stack brings up cortex-engine, Prometheus, Grafana, OTel Collector, and a k6 loadgen (loadtest profile). A CPU-override file (`docker-compose.cpu.yml`) runs the engine on CPU for development without an NVIDIA GPU. The stack is designed to be tested on a CUDA host via `make docker-up && make bench-serving` on the A10.
 
 The Helm chart (`ops/helm/cortex-engine/`) has Deployment, Service, and ServiceMonitor manifests: GPU node selector and tolerations, Prometheus scrape annotations, readiness/liveness probes (the `/ready` endpoint returns 503 until the model warmup completes), and autoscaling tied to the `cortex_queue_depth` metric. `helm lint` passes.
 
