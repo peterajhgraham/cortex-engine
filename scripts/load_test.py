@@ -94,6 +94,30 @@ def compute_stats(latencies: list[float]) -> dict:
 # ── In-process runner (scheduler + worker, no HTTP) ───────────────────────────
 
 
+class _ThreadedWorker:
+    """Adapter that runs InferenceWorker batches in asyncio's default thread pool.
+
+    The production InferenceWorker.run_batch() calls
+    loop.run_in_executor(self._executor, ...) where _executor is a dedicated
+    ThreadPoolExecutor created at __init__ time.  On CUDA the stream objects
+    (_compute_stream, _copy_stream) are created on whichever thread first calls
+    InferenceWorker.__init__, but synchronize() in the executor thread can stall
+    waiting for ops that the CUDA driver associates with a different thread
+    context — causing an unresolvable hang in the in-process test.
+
+    This adapter side-steps the issue by running _run_batch_sync via
+    asyncio.to_thread (the loop's default executor, a fresh thread each call),
+    which is exactly what the FastAPI lifespan does for warmup and matches
+    CUDA's expectation that stream ops and synchronize() share a thread context.
+    """
+
+    def __init__(self, inner: "InferenceWorker") -> None:
+        self._inner = inner
+
+    async def run_batch(self, payloads: list[dict]) -> list[dict]:
+        return await asyncio.to_thread(self._inner._run_batch_sync, payloads)
+
+
 async def run_inprocess(
     n_requests: int,
     concurrency: int,
@@ -118,15 +142,26 @@ async def run_inprocess(
         device=device,
         max_batch_size=max_batch,
     )
-    worker.warmup(n_iters=3)
+    # Run warmup in a thread so CUDA initialises in the same thread-pool context
+    # that inference will use — mirrors what the FastAPI lifespan does and avoids
+    # the stream-synchronize stall that happens when warmup runs on the main
+    # (event-loop) thread but inference runs on a different executor thread.
+    await asyncio.to_thread(worker.warmup, 3)
 
+    # Wire scheduler → _ThreadedWorker so every batch dispatched by the
+    # scheduler's run() loop reaches the actual CUDA forward pass.
+    threaded_worker = _ThreadedWorker(worker)
     scheduler = Scheduler(
-        worker=worker,
+        worker=threaded_worker,
         max_batch_size=max_batch,
         batch_timeout_ms=batch_timeout_ms,
         default_deadline_ms=60.0,
     )
     sched_task = asyncio.create_task(scheduler.run())
+    # Yield once so the scheduler task enters its queue-wait loop before any
+    # request tasks are created; without this, requests can arrive and sit in
+    # the queue before the scheduler's first get() is registered as a waiter.
+    await asyncio.sleep(0)
 
     print(f"Running {n_requests} requests, concurrency={concurrency}, events={n_events}…")
     semaphore = asyncio.Semaphore(concurrency)
