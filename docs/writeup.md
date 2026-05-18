@@ -8,7 +8,7 @@
 
 I built a complete training and inference stack for transformer neural decoders on real motor cortex data from the Neural Latents Benchmark. The headline deliverables: a 24.8 M parameter Perceiver-style model trained on 111 K windows of MC_Maze electrophysiology; a profiling-driven optimization workflow that found and fixed a real bottleneck before writing a single Triton kernel; three Triton GPU kernels with correctness test suites; per-channel INT8 quantization with **72% weight memory reduction** and max output error of 0.003; a continuous-batching inference server delivering **10.5× throughput** over naive sequential inference; and a full observability stack with Prometheus, three Grafana dashboards, and end-to-end OpenTelemetry tracing.
 
-The SLO target (p99 < 30 ms) was not met on the development hardware. All benchmarking happened on an Apple M4 Pro with PyTorch MPS backend. On MPS, a batch-16 Cortex-S forward pass takes ~62 ms; on an A100 it would take ~2–3 ms, which is where the 30 ms target lives. The Triton kernel performance numbers are also pending CUDA hardware. This post documents what was actually measured, why the remaining gaps exist, and what I would do differently.
+The SLO target (p99 < 30 ms) was not met on the development hardware. All benchmarking happened on an Apple M4 Pro with PyTorch MPS backend. On MPS, a batch-16 Cortex-S forward pass takes ~62 ms; on an A10 it would take ~5–8 ms, which is where the 30 ms target lives. The Triton kernel performance numbers are also pending CUDA hardware. This post documents what was actually measured, why the remaining gaps exist, and what I would do differently.
 
 ---
 
@@ -156,7 +156,7 @@ The kernel implements FlashAttention-2 style online softmax (running max, log-su
 
 **Fused RMSNorm + linear** (`cortex/kernels/fused_rmsnorm.py`). Every self-attention block applies RMSNorm followed immediately by a linear projection (QKV or MLP expand). In PyTorch, this writes the normalized intermediate `x_norm` to HBM and then reads it back for the matmul — two HBM round-trips for data that could stay in registers. The Triton kernel uses a two-pass approach: pass 1 accumulates the per-row squared sum (for RMS normalization); pass 2 applies the normalization inline during `tl.dot()`. The `x_norm` tensor never touches HBM.
 
-At Cortex-S scale (M=8192 tokens in a batch-of-32, K=512, bfloat16): each fused call saves 2 × M × K × 2 bytes = 16.7 MB. Each self-attention block calls it twice (for QKV projection and MLP expansion), saving 33.4 MB per block. Across 7 blocks, the forward pass moves ~234 MB less data. On A100 with 2 TB/s HBM2e bandwidth, that is ~0.12 ms of pure bandwidth time saved per forward pass before accounting for compute-bound behavior.
+At Cortex-S scale (M=8192 tokens in a batch-of-32, K=512, bfloat16): each fused call saves 2 × M × K × 2 bytes = 16.7 MB. Each self-attention block calls it twice (for QKV projection and MLP expansion), saving 33.4 MB per block. Across 7 blocks, the forward pass moves ~234 MB less data. On A10 with 600 GB/s GDDR6 bandwidth, that is ~0.4 ms of pure bandwidth time saved per forward pass before accounting for compute-bound behavior.
 
 Performance numbers for all three kernels are pending CUDA hardware.
 
@@ -212,7 +212,7 @@ In-process load test (scheduler + worker, no HTTP overhead), 200 requests, concu
 
 Naive sequential baseline (batch=1, no scheduler): ~15 req/s. The 10.5× improvement comes almost entirely from batching amortization — 16 concurrent requests coalesce into a single batch-16 forward pass that takes ~62 ms total instead of 16 × 62 ms = 992 ms.
 
-The p99 SLO target (< 30 ms) is not met. On MPS a batch-16 forward pass takes ~62 ms; the p50 reflects this directly. On A100, the same batch takes ~2–3 ms, which puts estimated p99 under 10 ms at this load. The infrastructure to hit the target exists; the hardware to validate it does not.
+The p99 SLO target (< 30 ms) is not met. On MPS a batch-16 forward pass takes ~62 ms; the p50 reflects this directly. On A10, the same batch takes ~5–8 ms, which puts estimated p99 under 25 ms at this load. The infrastructure to hit the target exists; the hardware to validate it does not.
 
 ---
 
@@ -264,7 +264,7 @@ The Helm chart (`ops/helm/cortex-engine/`) has Deployment, Service, and ServiceM
 
 **Nail the evaluation protocol before training.** The biggest time sink in Phase 1 was understanding why R² values were near zero. Forty-five minutes of debugging led to the realization that the NLB protocol uses trial-aligned evaluation, not sliding-window evaluation over the full recording. I should have read the NLB paper methodology section before writing the first training loop. A ten-minute read would have saved four hours of debugging.
 
-**Get CUDA access before writing Triton kernels.** Three kernels exist, all correctly implemented and passing correctness tests. None have measured performance numbers because Triton does not support MPS. The entire Phase 2 kernel story — which is the project's core ML systems claim — rests on projected numbers. A $3/hour A100 Colab instance would have resolved this. I prioritized getting all the infrastructure in place on local hardware over renting cloud compute, which was the wrong tradeoff.
+**Get CUDA access before writing Triton kernels.** Three kernels exist, all correctly implemented and passing correctness tests. None have measured performance numbers because Triton does not support MPS. The entire Phase 2 kernel story — which is the project's core ML systems claim — rests on projected numbers. A $1/hour A10 instance would have resolved this. I prioritized getting all the infrastructure in place on local hardware over renting cloud compute, which was the wrong tradeoff.
 
 **The naive throughput baseline was too weak.** The 10.5× improvement over "naive sequential" compares continuous batching (batch=16, async scheduler) against a Python loop issuing batch=1 requests one at a time. That gap is almost entirely Python dispatch overhead rather than batching efficiency. A more honest baseline would be naive batch=16 PyTorch inference without a scheduler — which would probably show 1.5–2× from the scheduler's deadline-aware coalescing, not 10×. I reported both the number and its source honestly, but the headline ratio is misleading without context.
 
@@ -300,7 +300,7 @@ Everything is at this repository. All benchmarks are reproducible on CUDA hardwa
 ```bash
 git clone <repo>
 make dev-install
-make bench-kernels         # requires CUDA (A100 or similar)
+make bench-kernels         # requires CUDA (A10 or similar)
 make docker-build && make docker-up && make bench-serving  # requires NVIDIA Docker
 ```
 

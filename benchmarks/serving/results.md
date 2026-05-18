@@ -38,8 +38,8 @@ Batch timeout: 5.0 ms
 
 **Honest note:** MPS forward pass for batch=16 Cortex-S is ~62 ms. All 16
 concurrent requests coalesce into one batch → no queue wait, but p99 is bounded
-by the MPS compute time. On A100 the same batch takes ~2–3 ms, giving an
-estimated p99 well under 30 ms. See the CUDA projection below.
+by the MPS compute time. On A10 the same batch takes ~5–8 ms, giving an
+estimated p99 well under 30 ms at moderate load. See the CUDA projection below.
 
 ### To Reproduce
 
@@ -70,13 +70,13 @@ per request measured via `curl` timing on MPS).
 | constant_load (CPU) | 100 req/s | ~95 req/s | ~75 ms | ~370 ms | 0% |
 | ramping_load (CPU) | 50→1000 req/s | saturates at ~160 req/s | ~72 ms | ~400 ms | <0.1% |
 
-**CUDA A100 projection** (extrapolated from Phase 3 profiling):
+**CUDA A10 projection** (extrapolated from Phase 3 profiling):
 
 | Scenario | Target rate | Projected p99 | Meets SLO (<30 ms)? |
 |---|---|---|---|
-| constant_load | 100 req/s | **~5 ms** | ✓ |
-| ramping_load | up to 1000 req/s | **~18 ms** | ✓ |
-| ramping_load | 1000+ req/s (saturated) | ~45 ms | ✗ (queue builds) |
+| constant_load | 100 req/s | **~12 ms** | ✓ |
+| ramping_load | up to 400 req/s | **~25 ms** | ✓ |
+| ramping_load | 400+ req/s (saturated) | ~60 ms | ✗ (queue builds) |
 
 ### SLO thresholds in k6
 
@@ -88,7 +88,7 @@ thresholds: {
 ```
 
 On CUDA hardware the constant_load and ramping_load-at-100 scenarios both
-meet the SLO; the ramp beyond ~800 req/s on a single A100 will start failing
+meet the SLO; the ramp beyond ~400 req/s on a single A10 will start failing
 the p99 threshold as the queue saturates.
 
 ### To Reproduce (requires Docker + NVIDIA GPU)

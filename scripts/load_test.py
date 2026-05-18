@@ -266,7 +266,7 @@ Batch timeout: {r.get('batch_timeout_ms', '—')} ms
 
 ## Notes
 
-- **SLO target:** p99 < 30 ms on CUDA A100.  Numbers above are on {r.get('device', 'unknown')}.
+- **SLO target:** p99 < 30 ms on CUDA A10.  Numbers above are on {r.get('device', 'unknown')}.
 - **Mode:** `{r['mode']}` — latency includes scheduler queue wait + inference only,
   NOT HTTP serialization or TCP.
 - **Batch dynamics:** up to {r.get('max_batch', 32)} requests per batch, formed

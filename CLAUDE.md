@@ -7,7 +7,7 @@ You are building a real-time inference engine for transformer-based neural decod
 **Name:** cortex-engine
 **One-line description:** Production inference infrastructure for transformer-based neural decoders. Custom Triton kernels, FSDP training, continuous batching, sub-30ms p99 latency.
 **Hero metrics to target:**
-- p99 latency under 30ms for Cortex-S streaming inference on a single A100
+- p99 latency under 30ms for Cortex-S streaming inference on a single A10
 - 5x throughput improvement over naive PyTorch baseline at saturating load
 - 4x memory reduction via INT8 quantization with <1% accuracy regression
 - Greater than 80% GPU utilization at peak throughput
