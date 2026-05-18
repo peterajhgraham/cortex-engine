@@ -125,10 +125,15 @@ async def run_inprocess(
     max_batch: int = 32,
     batch_timeout_ms: float = 5.0,
 ) -> dict:
-    """Benchmark the scheduler+worker pipeline directly."""
-    import torch
+    """Benchmark InferenceWorker directly, bypassing the scheduler.
+
+    Dispatches each request straight to worker.run_batch() via the worker's
+    dedicated single-thread ThreadPoolExecutor.  This avoids the
+    asyncio.PriorityQueue timing problem where scheduler.run() times out
+    waiting on queue.get() because the event loop never yields to let the
+    scheduler enter its wait before requests arrive.
+    """
     from cortex.models.config import CORTEX_S
-    from cortex.serve.scheduler import Scheduler
     from cortex.serve.worker import InferenceWorker, _detect_device, load_model
 
     device = _detect_device()
@@ -142,26 +147,9 @@ async def run_inprocess(
         device=device,
         max_batch_size=max_batch,
     )
-    # Run warmup in a thread so CUDA initialises in the same thread-pool context
-    # that inference will use — mirrors what the FastAPI lifespan does and avoids
-    # the stream-synchronize stall that happens when warmup runs on the main
-    # (event-loop) thread but inference runs on a different executor thread.
+    # Warmup in a thread matching the FastAPI lifespan pattern so CUDA stream
+    # context is consistent with the inference thread.
     await asyncio.to_thread(worker.warmup, 3)
-
-    # Wire scheduler → _ThreadedWorker so every batch dispatched by the
-    # scheduler's run() loop reaches the actual CUDA forward pass.
-    threaded_worker = _ThreadedWorker(worker)
-    scheduler = Scheduler(
-        worker=threaded_worker,
-        max_batch_size=max_batch,
-        batch_timeout_ms=batch_timeout_ms,
-        default_deadline_ms=60.0,
-    )
-    sched_task = asyncio.create_task(scheduler.run())
-    # Yield once so the scheduler task enters its queue-wait loop before any
-    # request tasks are created; without this, requests can arrive and sit in
-    # the queue before the scheduler's first get() is registered as a waiter.
-    await asyncio.sleep(0)
 
     print(f"Running {n_requests} requests, concurrency={concurrency}, events={n_events}…")
     semaphore = asyncio.Semaphore(concurrency)
@@ -173,7 +161,9 @@ async def run_inprocess(
         async with semaphore:
             t0 = time.perf_counter()
             try:
-                result = await scheduler.submit(payload, request_id=f"req_{i:05d}")
+                # worker.run_batch routes through a ThreadPoolExecutor(max_workers=1)
+                # which serialises all inference calls without the scheduler queue.
+                await worker.run_batch([payload])
                 latencies.append((time.perf_counter() - t0) * 1000)
             except Exception as exc:
                 errors.append(str(exc))
@@ -182,16 +172,10 @@ async def run_inprocess(
     await asyncio.gather(*[one_request(i) for i in range(n_requests)])
     total_s = time.perf_counter() - t_wall_0
 
-    await scheduler.stop()
-    sched_task.cancel()
-    try:
-        await sched_task
-    except asyncio.CancelledError:
-        pass
     worker.shutdown()
 
     return {
-        "mode": "in_process",
+        "mode": "in_process_direct",
         "device": str(device),
         "n_requests": n_requests,
         "concurrency": concurrency,
@@ -200,7 +184,7 @@ async def run_inprocess(
         "batch_timeout_ms": batch_timeout_ms,
         "successes": len(latencies),
         "failures": len(errors),
-        "throughput_rps": round(len(latencies) / total_s, 1),
+        "throughput_rps": round(len(latencies) / total_s, 1) if total_s > 0 else 0.0,
         "total_s": round(total_s, 2),
         "latency_ms": compute_stats(latencies),
     }

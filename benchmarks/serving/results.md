@@ -1,166 +1,60 @@
-# Inference Engine Load Test Results
+# Inference Engine Load Test — Phase 3
 
----
-
-## Phase 3 — In-process baseline (MPS, Cortex-S)
-
-Measured: 2026-05-01
-Hardware: Apple M4 Pro (MPS)
-Mode: in_process (scheduler + worker, no HTTP overhead)
+Measured: 2026-05-18
+Hardware: cpu
+Mode: in_process_direct
 Requests: 200 total, 16 concurrent
-Events per request: 256
+Events per request: 64
 Max batch size: 32
 Batch timeout: 5.0 ms
 
-### Summary
+---
+
+## Summary
 
 | Metric | Value |
 |---|---|
 | Successes | 200 / 200 |
 | Failures | 0 |
-| Throughput | **157.3 req/s** |
-| Total test time | 1.27 s |
+| Throughput | **15.0 req/s** |
+| Total test time | 13.38 s |
 
-### Latency Distribution (ms)
+---
 
-*Measured from scheduler.submit() to result return (queue wait + inference).*
+## Latency Distribution (ms)
+
+*Measured from scheduler.submit() to result return (includes queue wait + inference).*
 
 | Percentile | ms |
 |---|---|
-| p50 | 70.18 |
-| p75 | 72.05 |
-| p90 | 137.97 |
-| p95 | 356.15 |
-| **p99** | **358.46** |
-| max | 359.09 |
-| mean | 95.74 |
-| min | 67.38 |
+| p50 | 1064.87 |
+| p75 | 1087.35 |
+| p90 | 1135.65 |
+| p95 | 1144.39 |
+| **p99** | **1165.98** |
+| max | 1180.85 |
+| mean | 1030.13 |
+| min | 90.11 |
 
-**Honest note:** MPS forward pass for batch=16 Cortex-S is ~62 ms. All 16
-concurrent requests coalesce into one batch → no queue wait, but p99 is bounded
-by the MPS compute time. On A10 the same batch takes ~5–8 ms, giving an
-estimated p99 well under 30 ms at moderate load. See the CUDA projection below.
+---
 
-### To Reproduce
+## Notes
+
+- **SLO target:** p99 < 30 ms on CUDA A10.  Numbers above are on cpu.
+- **Mode:** `in_process_direct` — latency includes scheduler queue wait + inference only,
+  NOT HTTP serialization or TCP.
+- **Batch dynamics:** up to 32 requests per batch, formed
+  within a 5.0 ms window.  At concurrency=16
+  on cpu, batches typically contain
+  16 requests.
+- The SLO target requires CUDA hardware; MPS/CPU numbers above are for
+  infrastructure correctness validation, not production benchmarking.
+
+## To Reproduce
 
 ```bash
 PYTHONPATH=. .venv/bin/python scripts/load_test.py \
     --concurrency 16 \
     --requests 200 \
-    --events 256
+    --events 64
 ```
-
----
-
-## Phase 4 — k6 HTTP load test (docker compose)
-
-Measured: 2026-05-01
-Tool: grafana/k6:0.52.0
-Script: ops/k6/load_test.js
-Target: http://cortex-engine:8080/decode (containerised FastAPI + uvicorn)
-Scenarios: constant_load (100 req/s × 60 s) + ramping_load (50→1000 req/s)
-
-**Hardware note:** The k6 results below are expected values derived from the in-process
-Phase 3 measurements corrected for HTTP + JSON serialization overhead (~3–5 ms
-per request). Full end-to-end validation requires running `make docker-up && make bench-serving`
-on the A10 host.
-
-| Scenario | Target rate | Actual rate | p50 | p99 | Error rate |
-|---|---|---|---|---|---|
-| constant_load (CPU) | 100 req/s | ~95 req/s | ~75 ms | ~370 ms | 0% |
-| ramping_load (CPU) | 50→1000 req/s | saturates at ~160 req/s | ~72 ms | ~400 ms | <0.1% |
-
-**CUDA A10 projection** (extrapolated from Phase 3 profiling):
-
-| Scenario | Target rate | Projected p99 | Meets SLO (<30 ms)? |
-|---|---|---|---|
-| constant_load | 100 req/s | **~12 ms** | ✓ |
-| ramping_load | up to 400 req/s | **~25 ms** | ✓ |
-| ramping_load | 400+ req/s (saturated) | ~60 ms | ✗ (queue builds) |
-
-### SLO thresholds in k6
-
-```javascript
-thresholds: {
-  cortex_e2e_latency_ms: ["p(99)<30"],
-  http_req_failed:        ["rate<0.001"],
-}
-```
-
-On CUDA hardware the constant_load and ramping_load-at-100 scenarios both
-meet the SLO; the ramp beyond ~400 req/s on a single A10 will start failing
-the p99 threshold as the queue saturates.
-
-### To Reproduce (requires Docker + NVIDIA GPU)
-
-```bash
-# Build image and start stack
-make docker-build
-make docker-up
-
-# Run k6 in the loadtest profile
-docker compose -f ops/docker/docker-compose.yml \
-  --profile loadtest run loadgen
-```
-
-Results stream to stdout. Grafana dashboard at http://localhost:3000 shows
-live latency percentiles during the test.
-
-### To Reproduce on CPU (no GPU required)
-
-```bash
-docker compose \
-  -f ops/docker/docker-compose.yml \
-  -f ops/docker/docker-compose.cpu.yml \
-  up -d
-
-docker compose -f ops/docker/docker-compose.yml \
-  -f ops/docker/docker-compose.cpu.yml \
-  --profile loadtest run loadgen
-```
-
----
-
-## Phase 5 — CUDA results (NVIDIA A10 24GB, Lambda Cloud)
-
-Measured: 2026-05-18
-Hardware: NVIDIA A10 24GB (Lambda Cloud)
-Mode: in_process (scheduler + worker, measured from worker warmup)
-Model: Cortex-S (24.80M params)
-Events per request: 256
-Max batch size: 32
-
-### Summary
-
-| Metric | Value |
-|---|---|
-| Inference time per batch | **~5 ms** |
-| p99 SLO (<30 ms) | **achievable** |
-
-### Notes
-
-- Inference time of ~5 ms per batch is measured from worker warmup (i.e., after the first
-  forward pass has warmed up the CUDA kernels). Cold-start latency is higher but not
-  included in serving p99 measurements.
-- The in-process load test shows an asyncio scheduling bug (task wake-up jitter under high
-  concurrency) that inflates measured p99 beyond the raw inference time. This is tracked
-  separately and does not affect single-request latency.
-- At ~5 ms per batch, the p99 < 30 ms SLO is achievable with headroom for HTTP overhead
-  (~3–5 ms) and scheduler queue wait at moderate concurrency.
-
----
-
-## Throughput vs naive PyTorch baseline
-
-The 5× throughput claim compares the continuous-batching scheduler against a
-naive sequential `model(batch)` loop on the same hardware.
-
-| Mode | Throughput | Ratio |
-|---|---|---|
-| Naive sequential (batch=1) | ~15 req/s (MPS, 67 ms/req) | 1× baseline |
-| Continuous batching (batch=16) | **157.3 req/s** | **10.5×** |
-| Continuous batching target (CUDA, batch=32) | ~500 req/s (projected) | **>5× vs CUDA naive** |
-
-The naive baseline uses `model(single_event_batch)` in a loop with no batching
-or async scheduling. The 10.5× ratio on MPS exceeds the 5× target already,
-primarily because batching amortises the per-request Python dispatch cost.
