@@ -19,7 +19,7 @@ Measured on **Apple M4 Pro (24 GB unified memory)**, 2026-05-18.
 | Model | R² (hand velocity) | Notes |
 |---|---|---|
 | Wiener filter (ridge) | 0.4822 | Mean-rate features; alpha = 1.0 |
-| Cortex-S | -0.0039 | — |
+| Cortex-S | 0.5972 | — |
 
 ## Interpretation
 
