@@ -171,6 +171,11 @@ def main() -> None:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(summary, indent=2))
+
+    ckpt_path = out_path.parent / "cortex_s_final.pt"
+    torch.save({"model_state_dict": model.state_dict(), "config": CORTEX_S}, ckpt_path)
+    log.info("checkpoint_saved", path=str(ckpt_path))
+
     log.info("benchmark_complete", out=str(out_path), final_r2=eval_log[-1]["r2_velocity"] if eval_log else "N/A", total_s=f"{total_elapsed:.0f}")
 
 
