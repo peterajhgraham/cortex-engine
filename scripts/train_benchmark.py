@@ -19,7 +19,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from cortex.data.nlb import NLBDataset, collate_events
+from cortex.data.nlb import build_trial_aligned_datasets, collate_events
 from cortex.models import CortexModel
 from cortex.models.config import CORTEX_S
 from cortex.training.eval import evaluate, r2_score
@@ -36,29 +36,16 @@ log = get_logger(__name__)
 
 
 def build_loaders(
-    data_root: str, batch_size: int, val_max_samples: int = 2048
+    nwb_path: str, batch_size: int
 ) -> tuple[DataLoader, DataLoader]:
-    kwargs = dict(
-        data_root=data_root,
-        dandiset_id="000128",
+    train_ds, val_ds = build_trial_aligned_datasets(
+        nwb_path=Path(nwb_path),
         bin_size_ms=5,
-        window_ms=600,
-        stride_ms=50,
+        pre_onset_ms=100,
+        post_onset_ms=500,
         max_neurons=CORTEX_S.max_neurons,
         spike_value_buckets=CORTEX_S.spike_value_buckets,
-        download=False,
     )
-    train_ds = NLBDataset(split="train", **kwargs)  # type: ignore[arg-type]
-    val_ds = NLBDataset(split="val", **kwargs)  # type: ignore[arg-type]
-
-    # Cap val at val_max_samples to keep eval fast during training
-    if len(val_ds) > val_max_samples:
-        from torch.utils.data import Subset
-        import random
-        rng = random.Random(42)
-        val_idx = rng.sample(range(len(val_ds)), val_max_samples)
-        val_ds = Subset(val_ds, val_idx)  # type: ignore[assignment]
-
     loader_kw = dict(batch_size=batch_size, num_workers=0, collate_fn=collate_events)
     return (
         DataLoader(train_ds, shuffle=True, **loader_kw),
@@ -73,18 +60,22 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--warmup-steps", type=int, default=200)
-    parser.add_argument("--data-root", default="./data")
+    parser.add_argument(
+        "--nwb-path",
+        default="./data/000128/sub-Jenkins/sub-Jenkins_ses-full_desc-train_behavior+ecephys.nwb",
+        help="Path to the MC_Maze NWB file (train+behavior variant).",
+    )
     parser.add_argument("--out", default="benchmarks/training/results_raw.json")
     args = parser.parse_args()
 
     device = select_device(preference=args.device)
     log.info("benchmark_start", device=str(device), max_steps=args.max_steps, model_params=f"{sum(p.numel() for p in CortexModel(CORTEX_S).parameters())/1e6:.1f}M")
 
-    log.info("loading_data")
+    log.info("loading_data", nwb_path=args.nwb_path)
     t0 = time.time()
-    train_loader, val_loader = build_loaders(args.data_root, args.batch_size)
-    log.info("data_loaded", train_windows=len(train_loader.dataset),  # type: ignore[arg-type]
-             val_windows=len(val_loader.dataset), elapsed_s=f"{time.time()-t0:.1f}")  # type: ignore[arg-type]
+    train_loader, val_loader = build_loaders(args.nwb_path, args.batch_size)
+    log.info("data_loaded", train_trials=len(train_loader.dataset),  # type: ignore[arg-type]
+             val_trials=len(val_loader.dataset), elapsed_s=f"{time.time()-t0:.1f}")  # type: ignore[arg-type]
 
     model = CortexModel(CORTEX_S).to(device)
     optimizer = build_optimizer(model, _cfg(args.lr))
@@ -159,8 +150,8 @@ def main() -> None:
         "batch_size": args.batch_size,
         "final_r2_velocity": eval_log[-1]["r2_velocity"] if eval_log else None,
         "final_mse_velocity": eval_log[-1]["mse_velocity"] if eval_log else None,
-        "train_windows": len(train_loader.dataset),  # type: ignore[arg-type]
-        "val_windows": len(val_loader.dataset),  # type: ignore[arg-type]
+        "train_trials": len(train_loader.dataset),  # type: ignore[arg-type]
+        "val_trials": len(val_loader.dataset),  # type: ignore[arg-type]
         "total_elapsed_s": round(total_elapsed, 1),
         "avg_step_ms": round(avg_step_ms, 1),
         "p99_step_ms": round(p99_step_ms, 1),
