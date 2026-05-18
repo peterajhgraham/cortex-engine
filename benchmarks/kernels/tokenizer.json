@@ -1,0 +1,84 @@
+{
+  "benchmark": "fused_tokenizer",
+  "device": "NVIDIA A10",
+  "dtype": "torch.bfloat16",
+  "results": [
+    {
+      "E": 512,
+      "D": 512,
+      "label": "single sample (MC_Maze 600ms)",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.0485,
+      "triton_ms": 0.0756,
+      "speedup": 0.64,
+      "ref_bw_gbs": 43.3,
+      "triton_bw_gbs": 27.7
+    },
+    {
+      "E": 2048,
+      "D": 512,
+      "label": "batch=4, Cortex-S",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.0593,
+      "triton_ms": 0.0755,
+      "speedup": 0.79,
+      "ref_bw_gbs": 141.6,
+      "triton_bw_gbs": 111.2
+    },
+    {
+      "E": 8192,
+      "D": 512,
+      "label": "batch=16, Cortex-S",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.2244,
+      "triton_ms": 0.0885,
+      "speedup": 2.54,
+      "ref_bw_gbs": 149.5,
+      "triton_bw_gbs": 379.1
+    },
+    {
+      "E": 16384,
+      "D": 512,
+      "label": "batch=32, Cortex-S  [training batch]",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.4228,
+      "triton_ms": 0.108,
+      "speedup": 3.92,
+      "ref_bw_gbs": 158.7,
+      "triton_bw_gbs": 621.5
+    },
+    {
+      "E": 65536,
+      "D": 512,
+      "label": "batch=128, Cortex-S [continuous batching]",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 1.751,
+      "triton_ms": 0.2219,
+      "speedup": 7.89,
+      "ref_bw_gbs": 153.3,
+      "triton_bw_gbs": 1209.9
+    },
+    {
+      "E": 16384,
+      "D": 256,
+      "label": "batch=32, Cortex-XS (D=256)",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.2272,
+      "triton_ms": 0.0865,
+      "speedup": 2.63,
+      "ref_bw_gbs": 147.7,
+      "triton_bw_gbs": 388.0
+    },
+    {
+      "E": 65536,
+      "D": 128,
+      "label": "high-throughput small model",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.4269,
+      "triton_ms": 0.1053,
+      "speedup": 4.06,
+      "ref_bw_gbs": 157.2,
+      "triton_bw_gbs": 637.6
+    }
+  ]
+}

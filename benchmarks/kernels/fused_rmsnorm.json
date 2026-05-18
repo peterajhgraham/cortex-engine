@@ -1,0 +1,91 @@
+{
+  "benchmark": "fused_rmsnorm_linear",
+  "device": "NVIDIA A10",
+  "dtype": "torch.bfloat16",
+  "results": [
+    {
+      "M": 256,
+      "K": 512,
+      "N": 1536,
+      "label": "Cortex-S L=256, QKV projection",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.1,
+      "triton_ms": 0.0926,
+      "speedup": 1.08,
+      "ref_bw_gbs": 28.8,
+      "triton_bw_gbs": 31.2
+    },
+    {
+      "M": 256,
+      "K": 512,
+      "N": 2048,
+      "label": "Cortex-S L=256, MLP first layer",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.0983,
+      "triton_ms": 0.0932,
+      "speedup": 1.05,
+      "ref_bw_gbs": 37.3,
+      "triton_bw_gbs": 39.4
+    },
+    {
+      "M": 8192,
+      "K": 512,
+      "N": 1536,
+      "label": "Cortex-S BxL=8192, QKV projection",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.5856,
+      "triton_ms": 0.6976,
+      "speedup": 0.84,
+      "ref_bw_gbs": 74.3,
+      "triton_bw_gbs": 62.4
+    },
+    {
+      "M": 8192,
+      "K": 512,
+      "N": 2048,
+      "label": "Cortex-S BxL=8192, MLP first layer",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.6848,
+      "triton_ms": 0.8796,
+      "speedup": 0.78,
+      "ref_bw_gbs": 76.6,
+      "triton_bw_gbs": 59.6
+    },
+    {
+      "M": 8192,
+      "K": 256,
+      "N": 768,
+      "label": "Cortex-XS BxL=8192, QKV (D=256)",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.2731,
+      "triton_ms": 0.1982,
+      "speedup": 1.38,
+      "ref_bw_gbs": 78.2,
+      "triton_bw_gbs": 107.8
+    },
+    {
+      "M": 8192,
+      "K": 512,
+      "N": 512,
+      "label": "Cortex-S output projection",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.4564,
+      "triton_ms": 0.2438,
+      "speedup": 1.87,
+      "ref_bw_gbs": 56.3,
+      "triton_bw_gbs": 105.4
+    },
+    {
+      "M": 1,
+      "K": 512,
+      "N": 2048,
+      "label": "single-token decode",
+      "dtype": "torch.bfloat16",
+      "ref_ms": 0.1008,
+      "triton_ms": 0.0857,
+      "speedup": 1.18,
+      "ref_bw_gbs": 20.9,
+      "triton_bw_gbs": 24.5
+    }
+  ]
+}
