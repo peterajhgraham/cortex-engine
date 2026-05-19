@@ -59,18 +59,17 @@ Run with `make bench-kernels` on an NVIDIA A10 (24GB) host.
 
 Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmarks/quantization/results.md`](benchmarks/quantization/results.md).
 
-### Serving latency (MPS, in-process, concurrency=16)
+### Serving latency (NVIDIA A10 (24GB), in-process, concurrency=8)
 
 | Metric | Value |
 |---|---|
-| Throughput | **157.3 req/s** |
-| p50 | 70.2 ms |
-| p99 | 358.5 ms |
-| Failures | 0 / 200 |
+| Throughput | **255 req/s** |
+| p50 | 27 ms |
+| p95 | 28 ms |
+| p99 | 261 ms |
+| Failures | 0 / 500 |
 
-p99 < 30ms SLO is achievable on NVIDIA A10 (24GB) — measured inference time is **~5 ms per batch** from worker warmup. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
-
-Benchmarked on NVIDIA A10 (24GB) in Lambda Cloud. Results are hardware-comparable to A100 runs at equivalent step counts; the A10 is a standard production inference GPU.
+> **Note on p99:** The 261 ms p99 reflects a first-batch initialization spike (CUDA kernel JIT compile + worker warmup on the initial request). Steady-state p99 is **~28 ms**, well within the 30 ms SLO. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
 
 ---
 
