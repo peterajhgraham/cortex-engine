@@ -1,10 +1,10 @@
 # Inference Engine Load Test — Phase 3
 
-Measured: 2026-05-18
-Hardware: cpu
+Measured: 2026-05-19
+Hardware: cuda
 Mode: in_process_direct
-Requests: 200 total, 16 concurrent
-Events per request: 64
+Requests: 500 total, 8 concurrent
+Events per request: 256
 Max batch size: 32
 Batch timeout: 5.0 ms
 
@@ -14,10 +14,10 @@ Batch timeout: 5.0 ms
 
 | Metric | Value |
 |---|---|
-| Successes | 200 / 200 |
+| Successes | 500 / 500 |
 | Failures | 0 |
-| Throughput | **15.0 req/s** |
-| Total test time | 13.38 s |
+| Throughput | **254.7 req/s** |
+| Total test time | 1.96 s |
 
 ---
 
@@ -27,26 +27,26 @@ Batch timeout: 5.0 ms
 
 | Percentile | ms |
 |---|---|
-| p50 | 1064.87 |
-| p75 | 1087.35 |
-| p90 | 1135.65 |
-| p95 | 1144.39 |
-| **p99** | **1165.98** |
-| max | 1180.85 |
-| mean | 1030.13 |
-| min | 90.11 |
+| p50 | 27.28 |
+| p75 | 27.41 |
+| p90 | 27.55 |
+| p95 | 27.67 |
+| **p99** | **261.52** |
+| max | 276.17 |
+| mean | 31.1 |
+| min | 26.85 |
 
 ---
 
 ## Notes
 
-- **SLO target:** p99 < 30 ms on CUDA A10.  Numbers above are on cpu.
+- **SLO target:** p99 < 30 ms on CUDA A10.  Numbers above are on cuda.
 - **Mode:** `in_process_direct` — latency includes scheduler queue wait + inference only,
   NOT HTTP serialization or TCP.
 - **Batch dynamics:** up to 32 requests per batch, formed
-  within a 5.0 ms window.  At concurrency=16
-  on cpu, batches typically contain
-  16 requests.
+  within a 5.0 ms window.  At concurrency=8
+  on cuda, batches typically contain
+  8 requests.
 - The SLO target requires CUDA hardware; MPS/CPU numbers above are for
   infrastructure correctness validation, not production benchmarking.
 
@@ -54,7 +54,7 @@ Batch timeout: 5.0 ms
 
 ```bash
 PYTHONPATH=. .venv/bin/python scripts/load_test.py \
-    --concurrency 16 \
-    --requests 200 \
-    --events 64
+    --concurrency 8 \
+    --requests 500 \
+    --events 256
 ```
