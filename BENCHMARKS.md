@@ -1,4 +1,4 @@
-# Cortex-Engine — Consolidated Benchmarks
+# Cortex-Engine - Consolidated Benchmarks
 
 A single reference for every measured number in this repo. Each row links to the
 full report with raw JSON, hardware details, and reproduction commands.
@@ -37,7 +37,7 @@ full report with raw JSON, hardware details, and reproduction commands.
 
 ---
 
-## Decoding accuracy — trial-aligned (NLB protocol)
+## Decoding accuracy - trial-aligned (NLB protocol)
 
 One sample per reach trial, window −100 ms to +500 ms around `move_onset_time`,
 target = hand velocity at onset.
@@ -50,24 +50,24 @@ target = hand velocity at onset.
 | **Cortex-S** | 24.80 M | **0.60** |
 
 Sliding-window R² values are near zero because ~85% of windows are rest
-periods — the evaluation distribution is wrong, not the models. Trial-aligned
+periods - the evaluation distribution is wrong, not the models. Trial-aligned
 above is the correct comparison. Sliding-window numbers preserved for the
 record in [`benchmarks/training/results.md`](benchmarks/training/results.md).
 
 ---
 
-## Profiling — Cortex-S forward, batch=32, 512 events/sample (MPS)
+## Profiling - Cortex-S forward, batch=32, 512 events/sample (MPS)
 
 | Section | Time (ms) | % of forward | Triton candidate |
 |---|---|---|---|
-| **Full forward** | **129.0** | 100% | — |
+| **Full forward** | **129.0** | 100% | - |
 | Self-attention (×7) | 100.6 | 78.0% | YES (RMSNorm+linear fuse) |
 | Cross-attention | 13.6 | 10.5% | YES (block-sparse kernel) |
 | `_pack_events` | 7.8 | 6.1% | fixed in Python (cumsum) |
 | Behavior head | 3.0 | 2.3% | no (< 5% rule) |
 | Tokenizer | 1.4 | 1.1% | YES (fuses 3 embeds anyway) |
 
-Profiling chose the Triton targets — not intuition. Full report:
+Profiling chose the Triton targets - not intuition. Full report:
 [`benchmarks/profiling/baseline_report.md`](benchmarks/profiling/baseline_report.md).
 
 ---
@@ -91,7 +91,7 @@ All three are correctness-verified against PyTorch references in
 
 | Configuration | Memory | Reduction |
 |---|---|---|
-| float32 | 99.2 MB | — |
+| float32 | 99.2 MB | - |
 | INT8 per-channel | **27.8 MB** | **−72%** |
 
 - Max abs output diff fp32 vs INT8: **0.003**
@@ -116,7 +116,7 @@ Full report: [`benchmarks/quantization/results.md`](benchmarks/quantization/resu
 | Batch timeout | 5 ms |
 | Max batch | 32 |
 
-Mode is `in_process_direct` — latency covers scheduler queue wait +
+Mode is `in_process_direct` - latency covers scheduler queue wait +
 inference, not HTTP serialization. Full report:
 [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
 
