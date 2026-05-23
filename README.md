@@ -14,21 +14,49 @@ A brain-computer interface that misses its deadline is a cursor that lags, a pro
 
 ## Quick Visual
 
-```mermaid
-flowchart TD
-    A["Spike events<br/>(neuron_id, time_bin, value)"] --> B
-    B["<b>SpikeTokenizer</b><br/>fused embedding lookup +<br/>position encoding + value scaling<br/><i>[Triton: fused tokenizer kernel]</i>"] --> C
-    C["<b>Perceiver Cross-Attention</b><br/>latent queries (L, D) ×<br/>spike keys/values (E, D)<br/><i>[Triton: block-sparse cross-attention]</i>"] --> D
-    D["<b>Self-Attention Stack (×N)</b><br/>RMSNorm → QKV → SDPA → MLP<br/><i>[Triton: fused RMSNorm + linear]</i>"] --> E
-    E["<b>Behavior Head</b><br/>cross-attn → per-dim scalar<br/>(hand velocity)"] --> F["Decoded kinematics"]
+```
+   Spike events (neuron_id, time_bin, value)
+                     │
+                     ▼
+┌─────────────────────────────────────────────┐
+│  SpikeTokenizer                             │
+│  fused embedding lookup + position          │
+│  encoding + value scaling                   │
+│  [Triton: fused tokenizer kernel]           │
+└────────────────────┬────────────────────────┘
+                     │ (E, D) tokens
+                     ▼
+┌─────────────────────────────────────────────┐
+│  Perceiver Cross-Attention                  │
+│  latent queries (L, D) ×                    │
+│  spike keys/values (E, D)                   │
+│  [Triton: block-sparse cross-attention]     │
+└────────────────────┬────────────────────────┘
+                     │ (B, L, D) latents
+                     ▼
+┌─────────────────────────────────────────────┐
+│  Self-Attention Stack (× N)                 │
+│  RMSNorm → QKV → SDPA → MLP                 │
+│  [Triton: fused RMSNorm + linear]           │
+└────────────────────┬────────────────────────┘
+                     │ (B, L, D) latents
+                     ▼
+┌─────────────────────────────────────────────┐
+│  Behavior Head                              │
+│  cross-attn → per-dim scalar                │
+│  (hand velocity)                            │
+└────────────────────┬────────────────────────┘
+                     │
+                     ▼
+              Decoded kinematics
 
-    subgraph Serving["Inference server"]
-        S1["Async scheduler<br/>(EDF, continuous batching)"]
-        S2["Paged streaming KV cache<br/>(LRU, 91.6% window overlap)"]
-        S3["FastAPI<br/>WS /stream • POST /decode"]
-    end
-
-    Serving -.drives.-> B
+┌─────────────── Inference server ────────────┐
+│  Async scheduler   (EDF, continuous batch)  │
+│  Paged streaming KV cache                   │
+│      (LRU, 91.6% window overlap)            │
+│  FastAPI   WS /stream  •  POST /decode      │
+└─────────────────────────────────────────────┘
+   (drives SpikeTokenizer at request time)
 ```
 
 Production inference infrastructure for transformer-based neural decoders. Three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires NVIDIA A10 (24GB).
@@ -353,23 +381,40 @@ Three dashboards are auto-provisioned at startup (Grafana → Dashboards → Cor
 ```
 cortex-engine/
 ├── cortex/
-│   ├── models/
-│   ├── kernels/
-│   ├── quantization/
-│   ├── training/
-│   ├── data/
-│   ├── serve/
-│   └── cache/
-├── configs/
-├── scripts/
+│   ├── models/         # tokenizer, perceiver, cortex (XS/S/M), config
+│   ├── kernels/        # Triton kernels + benches (tokenizer,
+│   │                   #   sparse xattn, fused RMSNorm+linear)
+│   ├── quantization/   # per-channel INT8 calibration + QuantizedLinear
+│   ├── training/       # FSDP train loop, eval, checkpointing, baselines
+│   ├── data/           # NLB / MC_Maze pynwb+DANDI loader
+│   ├── serve/          # FastAPI app, EDF scheduler, worker,
+│   │                   #   Prometheus metrics, OTel tracing, schemas
+│   ├── cache/          # paged streaming KV cache (LRU)
+│   └── utils/          # device detection, structlog setup
+├── configs/            # Hydra: cortex_{xs,s,m}.yaml + model/ data/
+│                       #   training/ runtime/ serving/ sub-configs
+├── scripts/            # train_benchmark, baseline_benchmark,
+│                       #   profile_inference, calibrate_model,
+│                       #   eval_trial_aligned, load_test
 ├── tests/
+│   ├── unit/           # mirrors cortex/ layout
+│   └── integration/    # server, scheduler, end-to-end
 ├── benchmarks/
-│   ├── training/
-│   ├── profiling/
-│   ├── kernels/
-│   ├── quantization/
-│   └── serving/
-└── docs/
+│   ├── training/       # baselines + Cortex-S results
+│   ├── profiling/      # baseline_report.md (PyTorch profiler)
+│   ├── kernels/        # Triton kernel sweeps (CUDA)
+│   ├── quantization/   # INT8 memory/accuracy report
+│   └── serving/        # load-test latency distributions
+├── ops/
+│   ├── docker/         # Dockerfile + docker-compose (+ cpu override)
+│   ├── dashboards/     # Grafana JSON: traffic, latency, resources
+│   ├── helm/           # chart skeleton (ServiceMonitor, HPA, alerts)
+│   └── k6/             # load-generation scripts
+├── docs/               # PROJECT_PLAN, ROADMAP, writeup, runbook, slo
+├── BENCHMARKS.md       # consolidated benchmark index
+├── ROADMAP.md          # forward-looking work
+└── Makefile            # dev-install, train-s, bench-kernels,
+                        #   docker-build, docker-up
 ```
 
 ---
