@@ -8,13 +8,38 @@
 [![CI](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml)
 
 
+A brain-computer interface that misses its deadline is a cursor that lags, a prosthetic that jerks, a patient who cannot type. Closing the loop on motor cortex requires sub-30 ms p99 latency over irregular, high-dimensional spike streams - hundreds of neurons firing asynchronously at sub-millisecond resolution, with the population code distributed across cells and time in ways that resist the fixed shapes most accelerators are built for. Cortex-Engine treats this as a systems problem first: a Perceiver-style decoder that compresses variable-length spike events into a fixed latent set, three custom Triton kernels targeting the layers profiling proved were bottlenecks, INT8 quantization, and a continuous-batching inference server with a paged streaming KV cache, all wired through a production-grade Prometheus/Grafana/OpenTelemetry observability stack. The goal is not a paper - it is the inference engine you would actually deploy behind a real BCI.
+
+---
+
+## Quick Visual
+
+```mermaid
+flowchart TD
+    A["Spike events<br/>(neuron_id, time_bin, value)"] --> B
+    B["<b>SpikeTokenizer</b><br/>fused embedding lookup +<br/>position encoding + value scaling<br/><i>[Triton: fused tokenizer kernel]</i>"] --> C
+    C["<b>Perceiver Cross-Attention</b><br/>latent queries (L, D) ×<br/>spike keys/values (E, D)<br/><i>[Triton: block-sparse cross-attention]</i>"] --> D
+    D["<b>Self-Attention Stack (×N)</b><br/>RMSNorm → QKV → SDPA → MLP<br/><i>[Triton: fused RMSNorm + linear]</i>"] --> E
+    E["<b>Behavior Head</b><br/>cross-attn → per-dim scalar<br/>(hand velocity)"] --> F["Decoded kinematics"]
+
+    subgraph Serving["Inference server"]
+        S1["Async scheduler<br/>(EDF, continuous batching)"]
+        S2["Paged streaming KV cache<br/>(LRU, 91.6% window overlap)"]
+        S3["FastAPI<br/>WS /stream • POST /decode"]
+    end
+
+    Serving -.drives.-> B
+```
+
 Production inference infrastructure for transformer-based neural decoders. Three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires NVIDIA A10 (24GB).
 
 ---
 
 ## Benchmark Summary
 
-### Decoding accuracy (trial-aligned evaluation — NLB protocol)
+> Consolidated reference: [`BENCHMARKS.md`](BENCHMARKS.md). Forward-looking work: [`ROADMAP.md`](ROADMAP.md).
+
+### Decoding accuracy (trial-aligned evaluation - NLB protocol)
 
 One sample per reach trial, window −100 ms to +500 ms around `move_onset_time`, target = velocity at onset.
 Full report: [`benchmarks/training/trial_aligned_results.md`](benchmarks/training/trial_aligned_results.md).
@@ -26,7 +51,7 @@ Full report: [`benchmarks/training/trial_aligned_results.md`](benchmarks/trainin
 | Vanilla Transformer | ~5 M | pending CUDA |
 | Cortex-S | 24.80 M | **0.60** |
 
-*Sliding-window R² values (published in [`benchmarks/training/results.md`](benchmarks/training/results.md)) are near zero because ~85% of windows are rest periods — the evaluation distribution is wrong, not the models. Trial-aligned evaluation above is the correct comparison.*
+*Sliding-window R² values (published in [`benchmarks/training/results.md`](benchmarks/training/results.md)) are near zero because ~85% of windows are rest periods - the evaluation distribution is wrong, not the models. Trial-aligned evaluation above is the correct comparison.*
 
 ### Inference (MPS, Cortex-S, batch=32, 512 events/sample)
 
@@ -44,9 +69,9 @@ Full report: [`benchmarks/profiling/baseline_report.md`](benchmarks/profiling/ba
 
 | Kernel | What it fuses | Memory saved | Speedup (A10) |
 |---|---|---|---|
-| Fused tokenizer | 3 embedding lookups → 1 kernel | Eliminates 2 × (E, D) intermediates | — |
+| Fused tokenizer | 3 embedding lookups → 1 kernel | Eliminates 2 × (E, D) intermediates | - |
 | Sparse cross-attention | FA2 online softmax + block sparsity | Skips masked event tiles | **up to 27×** |
-| Fused RMSNorm + linear | Norm + matmul → 1 kernel | 112 MB / forward at Cortex-S scale | — |
+| Fused RMSNorm + linear | Norm + matmul → 1 kernel | 112 MB / forward at Cortex-S scale | - |
 
 Run with `make bench-kernels` on an NVIDIA A10 (24GB) host.
 
@@ -54,7 +79,7 @@ Run with `make bench-kernels` on an NVIDIA A10 (24GB) host.
 
 | Configuration | Memory | Reduction |
 |---|---|---|
-| float32 | 99.2 MB | — |
+| float32 | 99.2 MB | - |
 | INT8 per-channel | **27.8 MB** | **−72%** |
 
 Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmarks/quantization/results.md`](benchmarks/quantization/results.md).
@@ -70,6 +95,10 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 | Failures | 0 / 500 |
 
 > **Note on p99:** The 261 ms p99 reflects a first-batch initialization spike (CUDA kernel JIT compile + worker warmup on the initial request). Steady-state p99 is **~28 ms**, well within the 30 ms SLO. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
+
+> ### Honest Results - hardware caveat
+>
+> The model, kernels, scheduler, KV cache, server, and observability stack are all implemented, tested, and benchmarked end-to-end. Where numbers are reported on **MPS** (Apple Silicon), they are real measurements on real data - but they are not the hero numbers. The hero numbers (Triton kernel speedups, p99 < 30 ms serving, full FSDP training of Cortex-M) require an **NVIDIA A10 (24 GB)** and Triton's CUDA backend, which is not available on Apple Silicon. Every CUDA-dependent benchmark cell is explicitly marked **"pending CUDA"** rather than estimated, extrapolated, or quietly omitted. Kernel correctness is verified against PyTorch references within `rtol=1e-3, atol=1e-3` on every commit via CI. A consolidated view lives in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ---
 
@@ -110,43 +139,49 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 
 ---
 
+## Why This Matters Beyond BCI
+
+The systems patterns here are the same ones that make modern LLM inference work. The async scheduler with deadline-aware continuous batching is the same technique vLLM uses to coalesce variable-length generation requests into shared GPU work. The paged streaming KV cache is the same memory model as PagedAttention - fixed-size pages, LRU eviction, near-zero fragmentation - adapted from token sequences to sliding-window spike contexts with 91.6% overlap. The INT8 quantization pipeline (per-channel weights, 99th-percentile activation calibration, dequant-then-matmul) is the same recipe as LLM.int8(), implemented from scratch instead of via a one-line library call so the calibration code is auditable. FSDP2 sharded training, fused Triton kernels for the layers that profiling proved were bottlenecks, and OpenTelemetry tracing through an async request path are all directly transferable to any transformer-serving stack - this repo is a BCI inference engine that happens to be built out of LLM-systems primitives.
+
+---
+
 ## What's Built
 
-### Phase 1 — Model and Training Pipeline ✓
+### Phase 1 - Model and Training Pipeline ✓
 
 - **Three model sizes:** Cortex-XS (4.83M), Cortex-S (24.80M), Cortex-M (83.51M). Perceiver cross-attention encoder with a fixed latent array (L=256 for Cortex-S); handles variable neuron counts without hard-coding electrode geometry.
 - **FSDP training loop:** Mixed-precision bfloat16, sharded checkpointing via `torch.distributed.checkpoint`, cosine LR schedule with warmup. Single-GPU mode on MPS.
 - **Three baselines + MC_Maze loader:** Wiener filter, GRU, vanilla Transformer evaluated under identical protocol. pynwb/DANDI pipeline, 137 heldin units, 5 ms bins, trial-aligned and sliding-window dataset modes.
 
-### Phase 2.1 — Profiling ✓
+### Phase 2.1 - Profiling ✓
 
 - **Bottleneck found:** `_pack_events` Python loop forced 32 CPU↔MPS sync stalls per forward pass. Replaced with vectorized `cumsum`; saves 4.2 ms / forward (−3.2%).
 - **Bottleneck hierarchy:** Self-attention 78%, cross-attention 10.5%, pack_events 6.1%. Triton targets chosen from this, not intuition.
 
-### Phase 2.2 — Three Triton Kernels ✓
+### Phase 2.2 - Three Triton Kernels ✓
 
 - **Fused tokenizer:** 2D kernel fuses three embedding lookups into one pass; eliminates two intermediate (E, D) tensors. 9-config autotuner keyed on (E, D).
 - **Block-sparse cross-attention:** FlashAttention-2 online softmax (running m/l/o). Skips entire event tiles where the block mask is false. External mask API keeps sparsity policy decoupled from the kernel.
-- **Fused RMSNorm+linear:** Two-pass kernel — accumulate x² for RMS in pass 1, apply norm × gamma inline during `tl.dot()` in pass 2. x_norm never touches HBM.
+- **Fused RMSNorm+linear:** Two-pass kernel - accumulate x² for RMS in pass 1, apply norm × gamma inline during `tl.dot()` in pass 2. x_norm never touches HBM.
 
-### Phase 2.6 — INT8 Quantization ✓
+### Phase 2.6 - INT8 Quantization ✓
 
 - **Per-channel calibration:** Activation scales use 99th-percentile abs-max across calibration batches. Weight scales: absmax per output neuron.
-- **`QuantizedLinear`:** Stores INT8 weights + float32 scales; dequantizes to bf16 before matmul — device-agnostic, no quantized CUDA kernel dependency.
+- **`QuantizedLinear`:** Stores INT8 weights + float32 scales; dequantizes to bf16 before matmul - device-agnostic, no quantized CUDA kernel dependency.
 
-### Phase 3 — Inference Engine ✓
+### Phase 3 - Inference Engine ✓
 
 - **Scheduler + worker:** `asyncio.PriorityQueue` ordered by deadline (EDF). Worker runs in a `ThreadPoolExecutor`; on CUDA, `compute_stream` and `copy_stream` overlap H2D transfer with the previous batch's compute.
 - **`StreamingKVCache`:** Paged embedding cache `(num_pages, page_size, hidden_dim)`. LRU eviction via `OrderedDict`. Exploits the 91.6% overlap between consecutive 600 ms / 50 ms-stride BCI windows.
 - **FastAPI server:** `POST /decode`, `WS /stream`, `GET /metrics` (Prometheus sub-app). Admission control raises HTTP 429 when the queue is full.
 
-### Phase 4 — Operations and Observability ✓
+### Phase 4 - Operations and Observability ✓
 
 - **Three Grafana dashboards** auto-provisioned at startup: traffic (req/s, error rate, queue depth), latency (p50–p99.9, SLO burn gauge, batch-size heatmap), resources (GPU memory, utilization, KV cache hit rate).
 - **docker-compose stack:** cortex-engine + Prometheus + Grafana + OTel Collector + k6 loadgen. CPU override in `docker-compose.cpu.yml`. `docker compose up` brings up the full stack.
 - **Helm chart + Alertmanager:** GPU node selector/toleration, ServiceMonitor, autoscaling on `cortex_queue_depth`. Alerts for p99 > 50ms, error rate > 0.1%, queue saturation.
 
-### Phase 5 — Writeup ✓
+### Phase 5 - Writeup ✓
 
 - Engineering postmortem (`docs/writeup.md`, ~3 500 words): architecture decisions, profiling methodology, kernel design, honest results with hardware caveats, what I'd do differently.
 
@@ -158,7 +193,7 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 |---|---|
 | **PyTorch 2.2+** | FSDP2, `scaled_dot_product_attention` → FlashAttention dispatch, MPS backend for dev on Apple Silicon. |
 | **Triton** | Custom GPU kernels in Python; generates PTX directly. CUDA-only. |
-| **einops** | Readable tensor reshapes — `rearrange` instead of chains of `.view()`. |
+| **einops** | Readable tensor reshapes - `rearrange` instead of chains of `.view()`. |
 | **Hydra** | Hierarchical config composition with CLI overrides. |
 | **Pydantic v2** | Typed config and I/O schemas; `model_validator` for cross-field constraints. |
 | **pynwb / DANDI** | NLB data is NWB-native; no conversion step needed. |
@@ -283,10 +318,10 @@ make docker-build         # builds cortex-engine:latest from Dockerfile
 make docker-up            # docker compose up -d
 
 # Services:
-#   http://localhost:8080  — inference API
-#   http://localhost:9090  — Prometheus
-#   http://localhost:3000  — Grafana  (admin / admin)
-#   localhost:4317         — OTel Collector (gRPC)
+#   http://localhost:8080  - inference API
+#   http://localhost:9090  - Prometheus
+#   http://localhost:3000  - Grafana  (admin / admin)
+#   localhost:4317         - OTel Collector (gRPC)
 
 # Run k6 load test against the live stack:
 docker compose -f ops/docker/docker-compose.yml --profile loadtest run loadgen
@@ -305,11 +340,11 @@ docker compose \
 
 Three dashboards are auto-provisioned at startup (Grafana → Dashboards → Cortex):
 
-**Traffic** (`cortex-traffic`) — request rate by endpoint, error rate by type, queue depth, Little's Law in-flight estimate.
+**Traffic** (`cortex-traffic`) - request rate by endpoint, error rate by type, queue depth, Little's Law in-flight estimate.
 
-**Latency** (`cortex-latency`) — p50/p95/p99/p99.9 time series with 30 ms / 50 ms thresholds. SLO burn gauge spikes red when the k6 ramping scenario saturates the server. Batch-size heatmap shows continuous batching coalescing requests into batches of 16–32.
+**Latency** (`cortex-latency`) - p50/p95/p99/p99.9 time series with 30 ms / 50 ms thresholds. SLO burn gauge spikes red when the k6 ramping scenario saturates the server. Batch-size heatmap shows continuous batching coalescing requests into batches of 16–32.
 
-**Resources** (`cortex-resources`) — GPU memory and utilization, KV cache pages and hit rate. Hit rate should stay above 80% during streaming sessions given the 91.6% sliding-window overlap.
+**Resources** (`cortex-resources`) - GPU memory and utilization, KV cache pages and hit rate. Hit rate should stay above 80% during streaming sessions given the 91.6% sliding-window overlap.
 
 ---
 
