@@ -2,7 +2,7 @@
 
 Real-time inference infrastructure for transformer-based neural decoders, built from the GPU kernels up.
 
-A closed-loop brain-computer interface has a hard latency budget — a decoder that misses its deadline is a cursor that lags. The signal is awkward for accelerators: hundreds of neurons firing asynchronously, a population code spread across cells and time in shapes that don't fit a fixed tensor. Cortex-Engine is a Perceiver-style decoder that compresses variable-length spike events into a fixed latent set, three Triton kernels for the layers profiling flagged as bottlenecks, per-channel INT8 quantization, and a continuous-batching server with a paged streaming KV cache — trained on real motor cortex data from the [Neural Latents Benchmark](https://neurallatents.github.io/).
+A closed-loop brain-computer interface has a hard latency budget: a decoder that misses its deadline is a cursor that lags. The signal is awkward for accelerators: hundreds of neurons firing asynchronously, a population code spread across cells and time in shapes that don't fit a fixed tensor. Cortex-Engine is a Perceiver-style decoder that compresses variable-length spike events into a fixed latent set, three Triton kernels for the layers profiling flagged as bottlenecks, per-channel INT8 quantization, and a continuous-batching server with a paged streaming KV cache that is trained on real motor cortex data from the [Neural Latents Benchmark](https://neurallatents.github.io/).
 
 ## Results
 
