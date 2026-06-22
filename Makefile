@@ -69,7 +69,9 @@ train-m:
 	python -m cortex.training.train --config-name=cortex_m
 
 bench-kernels:
-	python -m cortex.benchmarks.kernels --output benchmarks/kernels/results.json
+	python -m cortex.kernels.bench_tokenizer
+	python -m cortex.kernels.bench_sparse_xattn
+	python -m cortex.kernels.bench_fused_rmsnorm
 
 bench-serving:
 	k6 run ops/k6/load_test.js
