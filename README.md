@@ -31,13 +31,13 @@ Full numbers, profiling breakdowns, and the GRU / vanilla-Transformer baselines 
 Spike events (neuron_id, time_bin, value)
         │
         ▼
-  SpikeTokenizer          fused embedding gather → (E, D) tokens   [Triton]
+  SpikeTokenizer          fused embedding gather → (E, D) tokens  [Triton]
         │
         ▼
-  Cross-attention         L latent queries × E spike tokens        [Triton, block-sparse]
+  Cross-attention         L latent queries × E spike tokens       [Triton, block-sparse]
         │
         ▼
-  Self-attention × N      RMSNorm → QKV → SDPA → MLP                [Triton, fused RMSNorm+linear]
+  Self-attention × N      RMSNorm → QKV → SDPA → MLP              [Triton, fused RMSNorm+linear]
         │
         ▼
   Decoder heads           behavior (hand velocity) · masked-spike (SSL)
