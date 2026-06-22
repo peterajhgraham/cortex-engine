@@ -55,6 +55,12 @@ dmypy.json
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
+# Model checkpoints (use W&B artifacts / git-lfs, never commit weights)
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
 # Project artifacts (anchored to repo root so they don't shadow source dirs
 # like cortex/data/)
 /checkpoints/

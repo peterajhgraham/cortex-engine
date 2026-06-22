@@ -1,65 +1,12 @@
 # Cortex-Engine
 
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
-![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
-![Triton](https://img.shields.io/badge/Triton-red?style=for-the-badge)
-
-
 [![CI](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/peterajhgraham/cortex-engine/actions/workflows/ci.yml)
 
+Production inference infrastructure for transformer-based neural decoders.
 
-A brain-computer interface that misses its deadline is a cursor that lags, a prosthetic that jerks, a patient who cannot type. Closing the loop on motor cortex requires sub-30 ms p99 latency over irregular, high-dimensional spike streams - hundreds of neurons firing asynchronously at sub-millisecond resolution, with the population code distributed across cells and time in ways that resist the fixed shapes most accelerators are built for. Cortex-Engine treats this as a systems problem first: a Perceiver-style decoder that compresses variable-length spike events into a fixed latent set, three custom Triton kernels targeting the layers profiling proved were bottlenecks, INT8 quantization, and a continuous-batching inference server with a paged streaming KV cache, all wired through a production-grade Prometheus/Grafana/OpenTelemetry observability stack. The goal is not a paper - it is the inference engine you would actually deploy behind a real BCI.
+A closed-loop brain-computer interface has a hard latency budget: a decoder that misses its deadline is a cursor that lags. The signal makes it hard — hundreds of neurons firing asynchronously, a population code spread across cells and time in shapes that don't fit a fixed tensor. Cortex-Engine treats this as a systems problem: a Perceiver-style decoder that compresses variable-length spike events into a fixed latent set, three Triton kernels targeting the layers profiling flagged as bottlenecks, per-channel INT8 quantization, and a continuous-batching server with a paged streaming KV cache, instrumented end-to-end with Prometheus/Grafana/OpenTelemetry.
 
----
-
-## Quick Visual
-
-```
-   Spike events (neuron_id, time_bin, value)
-                     │
-                     ▼
-┌─────────────────────────────────────────────┐
-│  SpikeTokenizer                             │
-│  fused embedding lookup + position          │
-│  encoding + value scaling                   │
-│  [Triton: fused tokenizer kernel]           │
-└────────────────────┬────────────────────────┘
-                     │ (E, D) tokens
-                     ▼
-┌─────────────────────────────────────────────┐
-│  Perceiver Cross-Attention                  │
-│  latent queries (L, D) ×                    │
-│  spike keys/values (E, D)                   │
-│  [Triton: block-sparse cross-attention]     │
-└────────────────────┬────────────────────────┘
-                     │ (B, L, D) latents
-                     ▼
-┌─────────────────────────────────────────────┐
-│  Self-Attention Stack (× N)                 │
-│  RMSNorm → QKV → SDPA → MLP                 │
-│  [Triton: fused RMSNorm + linear]           │
-└────────────────────┬────────────────────────┘
-                     │ (B, L, D) latents
-                     ▼
-┌─────────────────────────────────────────────┐
-│  Behavior Head                              │
-│  cross-attn → per-dim scalar                │
-│  (hand velocity)                            │
-└────────────────────┬────────────────────────┘
-                     │
-                     ▼
-              Decoded kinematics
-
-┌─────────────── Inference server ────────────┐
-│  Async scheduler   (EDF, continuous batch)  │
-│  Paged streaming KV cache                   │
-│      (LRU, 91.6% window overlap)            │
-│  FastAPI   WS /stream  •  POST /decode      │
-└─────────────────────────────────────────────┘
-   (drives SpikeTokenizer at request time)
-```
-
-Production inference infrastructure for transformer-based neural decoders. Three custom Triton kernels (fused embedding, block-sparse cross-attention, fused RMSNorm+linear), per-channel INT8 quantization with a calibration pipeline (72% weight memory reduction), a continuous-batching inference server with an earliest-deadline-first scheduler and paged streaming KV cache, and a full Prometheus/Grafana/OpenTelemetry observability stack. The model is a Perceiver-style transformer trained on real motor cortex population data from the [Neural Latents Benchmark](https://neurallatents.github.io/). On MPS the server delivers **10.5× throughput** over naive sequential inference; the p99 < 30ms SLO requires NVIDIA A10 (24GB).
+The model trains on real motor cortex data from the [Neural Latents Benchmark](https://neurallatents.github.io/). See [Architecture](#architecture) for the data path and [Benchmark Summary](#benchmark-summary) for measured numbers.
 
 ---
 
@@ -122,11 +69,9 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 | p99 | 261 ms |
 | Failures | 0 / 500 |
 
-> **Note on p99:** The 261 ms p99 reflects a first-batch initialization spike (CUDA kernel JIT compile + worker warmup on the initial request). Steady-state p99 is **~28 ms**, well within the 30 ms SLO. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
+The 261 ms p99 is a first-request warmup spike (CUDA JIT compile + worker init); steady-state p99 is ~28 ms. Full report: [`benchmarks/serving/results.md`](benchmarks/serving/results.md).
 
-> ### Honest Results - hardware caveat
->
-> The model, kernels, scheduler, KV cache, server, and observability stack are all implemented, tested, and benchmarked end-to-end. Where numbers are reported on **MPS** (Apple Silicon), they are real measurements on real data - but they are not the hero numbers. The hero numbers (Triton kernel speedups, p99 < 30 ms serving, full FSDP training of Cortex-M) require an **NVIDIA A10 (24 GB)** and Triton's CUDA backend, which is not available on Apple Silicon. Every CUDA-dependent benchmark cell is explicitly marked **"pending CUDA"** rather than estimated, extrapolated, or quietly omitted. Kernel correctness is verified against PyTorch references within `rtol=1e-3, atol=1e-3` on every commit via CI. A consolidated view lives in [`BENCHMARKS.md`](BENCHMARKS.md).
+> **Hardware caveat.** Numbers tagged *MPS* (Apple Silicon) are real measurements on real data, but the hero numbers — Triton kernel speedups, p99 < 30 ms serving, full Cortex-M FSDP — need CUDA, which MPS doesn't have. CUDA-dependent cells are marked *pending CUDA* rather than estimated. Kernel correctness is checked against PyTorch references (`rtol=atol=1e-3`) on every commit. Consolidated in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ---
 
@@ -164,12 +109,6 @@ Max weight error: 0.003. 34/35 linear layers quantized. Full report: [`benchmark
 │  Masked spike: reconstruction head (SSL)    │
 └─────────────────────────────────────────────┘
 ```
-
----
-
-## Why This Matters Beyond BCI
-
-The systems patterns here are the same ones that make modern LLM inference work. The async scheduler with deadline-aware continuous batching is the same technique vLLM uses to coalesce variable-length generation requests into shared GPU work. The paged streaming KV cache is the same memory model as PagedAttention - fixed-size pages, LRU eviction, near-zero fragmentation - adapted from token sequences to sliding-window spike contexts with 91.6% overlap. The INT8 quantization pipeline (per-channel weights, 99th-percentile activation calibration, dequant-then-matmul) is the same recipe as LLM.int8(), implemented from scratch instead of via a one-line library call so the calibration code is auditable. FSDP2 sharded training, fused Triton kernels for the layers that profiling proved were bottlenecks, and OpenTelemetry tracing through an async request path are all directly transferable to any transformer-serving stack - this repo is a BCI inference engine that happens to be built out of LLM-systems primitives.
 
 ---
 
